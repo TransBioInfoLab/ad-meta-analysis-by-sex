@@ -544,7 +544,14 @@ library(wateRmelon)
 library(RPMM)
 library(sesame)
 library(sesameData)
+library(sm)
 ```
+
+### test percentage of type I and type II probes then normalize the matrix
+
+#### on autosomes
+
+##### for females
 
 ```{R, eval = FALSE, include = FALSE}
 ### Order annotation in the same order as beta matrix
@@ -552,61 +559,171 @@ annotType <- sesameDataGet("HM450.hg19.manifest")
 annotType$designTypeNumeric <- ifelse(annotType$designType == "I",1,2)
 
 ### Density plot for type I and type II probes
-library(sm)
-
-betaQNCompleteCol1 <- betaQN[complete.cases(betaQN[,1]), ]
-annotTypeCompleteCol1 <- annotType[row.names(betaQNCompleteCol1), ]
+betaQNCompleteCol1_female_auto <- betaQN_female_auto[complete.cases(betaQN_female_auto[,1]), ]
+annotTypeCompleteCol1_female_auto <- annotType[row.names(betaQNCompleteCol1_female_auto), ]
 
 sm.density.compare(
-  betaQNCompleteCol1[,1],
-  annotTypeCompleteCol1$designTypeNumeric
+  betaQNCompleteCol1_female_auto[,1],
+  annotTypeCompleteCol1_female_auto$designTypeNumeric
 )
+title(main = "Density plot for type I and type II probes on female autosomes")
 
-type12 <- annotType$designTypeNumeric[match(rownames(betaQN),names(annotType))]
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_auto),names(annotType))]
+table(type12)
 ```
 ```{R, eval = FALSE}
-### BMIQ
-set.seed (946)
-doParallel::registerDoParallel(cores = 8)
-betaQN_BMIQ <- plyr::aaply(
-  betaQN, 2,
+set.seed(946)
+doParallel::registerDoParallel(cores = 6)
+betaQN_BMIQ_female_auto <- plyr::aaply(
+  betaQN_female_auto, 2,
   function(x){
     norm_ls <- BMIQ(x, design.v = type12, plots = FALSE)
     return (norm_ls$nbeta)
   },.progress = "time",.parallel = TRUE
 ) %>% t()
-colnames(betaQN_BMIQ) <- substr(colnames(betaQN_BMIQ),1,stringr::str_length(pheno_df$sample) %>% unique)
-
-save(betaQN_BMIQ, pheno_df, file = paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
+colnames(betaQN_BMIQ_female_auto) <- substr(colnames(betaQN_BMIQ_female_auto),1,stringr::str_length(pheno_df$sample) %>% unique)
 ```
 
-```{R, include = FALSE}
-load(paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
-```
+##### for males
 
 ```{R, eval = FALSE, include = FALSE}
-##### 6. Density plot after normalization and BMIQ #############################
-matdensity(object = betaQN_BMIQ,
-           groupFactor =  pheno_df$stage %>%  as.factor(),
-           xlab = " ", 
-           ylab = "density",
-           main = "Beta Values", 
-           brewer.n = 8, 
-           brewer.name = "Dark2")
+### Density plot for type I and type II probes
+betaQNCompleteCol1_male_auto <- betaQN_male_auto[complete.cases(betaQN_male_auto[,1]), ]
+annotTypeCompleteCol1_male_auto <- annotType[row.names(betaQNCompleteCol1_male_auto), ]
 
-legend('top',
-       paste0("stage ", levels( pheno_df$stage %>%  as.factor())),
-       col = c(1:7), lty = 1, lwd = 3)
+sm.density.compare(
+  betaQNCompleteCol1_male_auto[,1],
+  annotTypeCompleteCol1_male_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male autosomes")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_auto),names(annotType))]
+table(type12)
+```
+```{R, eval = FALSE}
+set.seed(946)
+doParallel::registerDoParallel(cores = 6)
+betaQN_BMIQ_male_auto <- plyr::aaply(
+  betaQN_male_auto, 2,
+  function(x){
+    norm_ls <- BMIQ(x, design.v = type12, plots = FALSE)
+    return (norm_ls$nbeta)
+  },.progress = "time",.parallel = TRUE
+) %>% t()
+colnames(betaQN_BMIQ_male_auto) <- substr(colnames(betaQN_BMIQ_male_auto),1,stringr::str_length(pheno_df$sample) %>% unique)
 ```
 
-# Outliers detection - PCA analysis
+#### on chromosome X
+
+##### for females
+
+```{R, eval = FALSE, include = FALSE}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_female_X <- betaQN_female_X[complete.cases(betaQN_female_X[,1]), ]
+annotTypeCompleteCol1_female_X <- annotType[row.names(betaQNCompleteCol1_female_X), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_female_X[,1],
+  annotTypeCompleteCol1_female_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female chromosome X")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_X),names(annotType))]
+table(type12)
+```
+
+##### for males
+
+```{R, eval = FALSE, include = FALSE}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_male_X <- betaQN_male_X[complete.cases(betaQN_male_X[,1]), ]
+annotTypeCompleteCol1_male_X <- annotType[row.names(betaQNCompleteCol1_male_X), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_male_X[,1],
+  annotTypeCompleteCol1_male_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male chromosome X")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_X),names(annotType))]
+table(type12)
+```
+
+#### on chromosome Y
+
+```{R, eval = FALSE, include = FALSE}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_male_Y <- betaQN_male_Y[complete.cases(betaQN_male_Y[,1]), ]
+annotTypeCompleteCol1_male_Y <- annotType[row.names(betaQNCompleteCol1_male_Y), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_male_Y[,1],
+  annotTypeCompleteCol1_male_Y$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on chromosome Y")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_Y),names(annotType))]
+table(type12)
+```
+
+### save density plots and normalized datasets
+
+```{R}
+### save plots
+pdf(paste0(data.dir.probes.normalization, "densityPlotByProbeType.pdf"))
+
+sm.density.compare(
+  betaQNCompleteCol1_female_auto[,1],
+  annotTypeCompleteCol1_female_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female autosomes")
+
+sm.density.compare(
+  betaQNCompleteCol1_male_auto[,1],
+  annotTypeCompleteCol1_male_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male autosomes")
+
+sm.density.compare(
+  betaQNCompleteCol1_female_X[,1],
+  annotTypeCompleteCol1_female_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female chromosome X")
+
+sm.density.compare(
+  betaQNCompleteCol1_male_X[,1],
+  annotTypeCompleteCol1_male_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male chromosome X")
+
+sm.density.compare(
+  betaQNCompleteCol1_male_Y[,1],
+  annotTypeCompleteCol1_male_Y$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on chromosome Y")
+
+dev.off()
+
+### combined normalized matrices
+betaQN_BMIQ_female <- rbind(betaQN_BMIQ_female_auto, betaQN_female_X)
+betaQN_BMIQ_male <- rbind(betaQN_BMIQ_male_auto, betaQN_male_X, betaQN_male_Y)
+save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
+
+```
+
+## Outliers detection - PCA analysis
 
 - Select most variable probes and perform PCA analysis
 
 Input: 
 
-- GASPARONI_QNBMIQ.rds
-- pheno_df.RDS
+- GASPARONI_QNBMIQ.rds  
+- pheno_df.RDS  
 
 Output: 
 
@@ -615,49 +732,39 @@ Output:
 - GASPARONI_QNBMIQ_PCfiltered.RDS
 - pheno_df.RDS
 
-
 ```{R}
 # plotPCA and OrderDataBySd functions
 devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
 ```
-
 ```{R}
 ### merge in group info
 ## add center and scale
 ## compare M values vs. beta values
 ## with and without center / scale
-
-##### 0.Import datasets ########################################################
 load(paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
-identical(colnames(betaQN_BMIQ), pheno_df$sample)
+```
+
+### for females  
+
+```{R}
+pheno_female_df <- pheno_df %>% filter(sex == "F")
+pheno_female_df$stage3 <- ifelse(
+  pheno_female_df$stage %in% c(0,1,2), "0-2",
+  ifelse(pheno_female_df$stage %in% c(3,4), "3-4", "5-6")
+)
+betaQN_BMIQ_female <- betaQN_BMIQ_female[ , pheno_female_df$sample]
 
 ### transform to m values
-mvalue_mat <- log2(betaQN_BMIQ / (1 - betaQN_BMIQ)) #dim: 437713 142
+mvalue_mat <- log2(betaQN_BMIQ_female / (1 - betaQN_BMIQ_female)) #dim: 457402 30
 
-pheno_df <- subset(pheno_df, pheno_df$sample %in% colnames(betaQN_BMIQ)) #dim: 142 7
+### order matrix by most variable probes on top
+betaOrd_mat <- OrderDataBySd(betaQN_BMIQ_female) #dim: 457402 30
+mOrd_mat <- OrderDataBySd(mvalue_mat)  #dim: 457402 30
 
-# both_df$stage <- as.numeric(as.character(both_df$stage))
+identical(pheno_female_df$sample, colnames(betaOrd_mat))
+identical(pheno_female_df$sample, colnames(mOrd_mat))
 
-pheno_df$stage3 <- pheno_df$stage
-pheno_df$stage3[pheno_df$stage <= 2] <- '0-2'
-pheno_df$stage3[pheno_df$stage > 2 & pheno_df$stage < 5] <- '3-4'
-pheno_df$stage3[pheno_df$stage >= 5] <- '5-6'
-
-
-##### 1.Order matrix by most variable probes on top ############################
-
-betaOrd_mat <- OrderDataBySd(betaQN_BMIQ) #dim: 391482 142
-
-mOrd_mat <- OrderDataBySd(mvalue_mat)  #dim: 391482 142
-
-betaOrd_matPlot <- betaOrd_mat[, pheno_df$sample] #dim: 391482 142
-mOrd_matPlot <- mOrd_mat[, pheno_df$sample]       #dim: 391482 142
-identical(pheno_df$sample, colnames(betaOrd_matPlot))
-identical(pheno_df$sample, colnames(mOrd_matPlot))
-
-expSorted_mat = betaOrd_mat #dim: 391482 142
-
-pca <- prcomp(t(expSorted_mat[1:50000, ]),
+pca <- prcomp(t(betaOrd_mat[1:50000, ]),
               center = TRUE,
               scale = TRUE)
 
@@ -681,52 +788,31 @@ d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
 d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
 d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
 
-readr::write_csv(d, paste0(data.dir.pca, "GASPARONI_PCs_usingBetas.csv"))
+readr::write_csv(d, paste0(data.dir.pca, "GASPARONI_PCs_usingBetas_female.csv"))
 ```
 
 ```{R, eval = FALSE, include = FALSE}
-##### 2.PCA plot ###############################################################
+### 2.PCA plot
 library(ggplot2)
 library(ggrepel)
 
-### beta values
+### Beata values
 byStage <- plotPCA(
   dataset = "Gasparoni: beta values",
   expSorted_mat = betaOrd_mat,
-  pheno = pheno_df,
+  pheno = pheno_female_df,
   group_char = "stage3",
   ntop = 50000,
   center = TRUE,
   scale = TRUE
 )
 
-bySex <- plotPCA(
-  dataset = "Gasparoni: beta values",
-  expSorted_mat = betaOrd_mat,
-  pheno = pheno_df,
-  group_char = "sex",
-  ntop = 50000,
-  center = TRUE,
-  scale = TRUE
-)
-
-
-#### M values
+### M values
 byStage <- plotPCA(
   dataset = "Gasparoni: M values",
   expSorted_mat = mOrd_mat,
-  pheno = pheno_df,
+  pheno = pheno_female_df,
   group_char = "stage3",
-  ntop = 50000,
-  center = TRUE,
-  scale = TRUE
-)
-
-bySex <- plotPCA(
-  dataset = "Gasparoni: M values",
-  expSorted_mat = mOrd_mat,
-  pheno = pheno_df,
-  group_char = "sex",
   ntop = 50000,
   center = TRUE,
   scale = TRUE
@@ -735,24 +821,113 @@ bySex <- plotPCA(
 
 
 ```{R}
-##### 2.Filter samples by PCA, save files ######################################
-
+### Filter samples by PCA, save files
 noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
-betaQN_BMIQ_PCfiltered <- betaQN_BMIQ[, rownames(noOutliers)] #dim: 433656 59
-saveRDS(betaQN_BMIQ_PCfiltered, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS"))
+betaQN_BMIQ_PCfiltered_female <- betaQN_BMIQ_female[, rownames(noOutliers)] #dim: 457402 29
+saveRDS(betaQN_BMIQ_PCfiltered_female, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_female.RDS"))
 
-pheno_df <- pheno_df[pheno_df$sample %in% rownames(noOutliers),] #dim: 59 6
-saveRDS(pheno_df, paste0(data.dir.pca, "pheno_df.RDS"))
+pheno_female_df <- pheno_female_df[pheno_female_df$sample %in% rownames(noOutliers),] #dim: 29 7
+saveRDS(pheno_female_df, paste0(data.dir.pca, "pheno_female_df.RDS"))
+```
+
+### for males  
+
+```{R}
+pheno_male_df <- pheno_df %>% filter(sex == "M")
+pheno_male_df$stage3 <- ifelse(
+  pheno_male_df$stage %in% c(0,1,2), "0-2",
+  ifelse(pheno_male_df$stage %in% c(3,4), "3-4", "5-6")
+)
+betaQN_BMIQ_male <- betaQN_BMIQ_male[ , pheno_male_df$sample]
+
+### transform to m values
+mvalue_mat <- log2(betaQN_BMIQ_male / (1 - betaQN_BMIQ_male)) #dim: 457464 27
+
+### order matrix by most variable probes on top
+betaOrd_mat <- OrderDataBySd(betaQN_BMIQ_male) #dim: 457464 27
+mOrd_mat <- OrderDataBySd(mvalue_mat)  #dim: 457464 27
+
+identical(pheno_male_df$sample, colnames(betaOrd_mat))
+identical(pheno_male_df$sample, colnames(mOrd_mat))
+
+pca <- prcomp(t(betaOrd_mat[1:50000, ]),
+              center = TRUE,
+              scale = TRUE)
+
+d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2])
+
+meanPC1 <- mean (d$PC1)
+sdPC1   <- sd (d$PC1)
+
+meanPC2 <- mean (d$PC2)
+sdPC2   <- sd (d$PC2)
+
+out3sdPC1_1 <- meanPC1 - 3 * sdPC1
+out3sdPC1_2 <- meanPC1 + 3 * sdPC1
+
+out3sdPC2_1 <- meanPC2 - 3 * sdPC2
+out3sdPC2_2 <- meanPC2 + 3 * sdPC2
+
+d$outlier_PC1[d$PC1 >= out3sdPC1_1 & d$PC1 <= out3sdPC1_2] <- 0
+d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
+
+d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
+d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
+
+readr::write_csv(d, paste0(data.dir.pca, "GASPARONI_PCs_usingBetas_male.csv"))
+```
+
+```{R, eval = FALSE, include = FALSE}
+### 2.PCA plot
+library(ggplot2)
+library(ggrepel)
+
+### Beata values
+byStage <- plotPCA(
+  dataset = "Gasparoni: beta values",
+  expSorted_mat = betaOrd_mat,
+  pheno = pheno_male_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+
+### M values
+byStage <- plotPCA(
+  dataset = "Gasparoni: M values",
+  expSorted_mat = mOrd_mat,
+  pheno = pheno_male_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+```
+
+
+```{R}
+### Filter samples by PCA, save files
+noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
+betaQN_BMIQ_PCfiltered_male <- betaQN_BMIQ_male[, rownames(noOutliers)] #dim: 457464 27
+saveRDS(betaQN_BMIQ_PCfiltered_male, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_male.RDS"))
+
+pheno_male_df <- pheno_male_df[pheno_male_df$sample %in% rownames(noOutliers),] #dim: 27 7
+saveRDS(pheno_male_df, paste0(data.dir.pca, "pheno_male_df.RDS"))
 ```
 
 # Summary after QC steps
 
 ## Data and metadata
 ```{R}
-nb.samples.with.clinical.after.pca <- ncol(betaQN_BMIQ_PCfiltered)
-dim(betaQN_BMIQ_PCfiltered)
-dim(pheno_df)
-pheno_df %>% 
+nb.samples.with.clinical.after.pca.female <- ncol(betaQN_BMIQ_PCfiltered_female)
+nb.samples.with.clinical.after.pca.male <- ncol(betaQN_BMIQ_PCfiltered_male)
+dim(betaQN_BMIQ_PCfiltered_female)
+dim(betaQN_BMIQ_PCfiltered_male)
+dim(pheno_female_df)
+dim(pheno_male_df)
+
+pheno_female_df %>% 
   DT::datatable(filter = 'top',
                 style = "bootstrap",
                 extensions = 'Buttons',
@@ -762,14 +937,31 @@ pheno_df %>%
                                keys = TRUE, 
                                pageLength = 10), 
                 rownames = FALSE,
-                caption = "Samples metadata")
+                caption = "Female samples metadata")
+
+pheno_male_df %>% 
+  DT::datatable(filter = 'top',
+                style = "bootstrap",
+                extensions = 'Buttons',
+                options = list(scrollX = TRUE, 
+                               dom = 'Bfrtip',
+                               buttons = I('colvis'),
+                               keys = TRUE, 
+                               pageLength = 10), 
+                rownames = FALSE,
+                caption = "Male samples metadata")
 ```
 
 ```{R, eval = FALSE, include = FALSE}
-ggpubr::gghistogram(data = pheno_df, x = "stage",bins = 8)
-ggpubr::gghistogram(data = pheno_df, x = "stage",bins = 8,facet.by = "sex",fill = "sex")
-ggpubr::gghistogram(data = pheno_df, x = "age.brain",bins = 20)
-ggpubr::gghistogram(data = pheno_df, x = "age.brain",bins = 20,fill = "sex",facet.by = "sex")
+ggpubr::gghistogram(data = pheno_female_df, x = "stage",bins = 8)
+# ggpubr::gghistogram(data = pheno_female_df, x = "stage",bins = 8,facet.by = "sex",fill = "sex")
+ggpubr::gghistogram(data = pheno_female_df, x = "age.brain",bins = 20)
+# ggpubr::gghistogram(data = pheno_female_df, x = "age.brain",bins = 20,fill = "sex",facet.by = "sex")
+
+ggpubr::gghistogram(data = pheno_male_df, x = "stage",bins = 8)
+# ggpubr::gghistogram(data = pheno_male_df, x = "stage",bins = 8,facet.by = "sex",fill = "sex")
+ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20)
+# ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20,fill = "sex",facet.by = "sex")
 ```
 
 
@@ -779,7 +971,7 @@ ggpubr::gghistogram(data = pheno_df, x = "age.brain",bins = 20,fill = "sex",face
 df.samples <- data.frame("Number of samples" =  c(nb.samples, 
                                                   nb.samples.bc.filtered,
                                                   nb.samples.with.clinical, 
-                                                  nb.samples.with.clinical.after.pca),
+                                                  nb.samples.with.clinical.after.pca.female + b.samples.with.clinical.after.pca.male),
                          "Description" = c("total number of samples",
                                            "samples with bisulfate conversion > 88",
                                            "samples with clinical data",
@@ -787,7 +979,7 @@ df.samples <- data.frame("Number of samples" =  c(nb.samples,
                          "Difference" = c("-",
                                           nb.samples.bc.filtered - nb.samples ,
                                           nb.samples.with.clinical - nb.samples.bc.filtered ,
-                                          nb.samples.with.clinical.after.pca - nb.samples.with.clinical)
+                                          nb.samples.with.clinical.after.pca.female + b.samples.with.clinical.after.pca.male - nb.samples.with.clinical)
 )    
 df.samples           
 
@@ -795,386 +987,389 @@ df.samples
 df.probes <- data.frame("Number of probes" = c(nb.probes,
                                                nb.probes.detectP, 
                                                nb.probes.detectP.cg,
-                                               nb.probes.cg.dmrcate),
+                                               nb.probes.cg.dmrcate,
+                                               nb.probes.cg.dmrcate.chrM),
                         "Description" = c("total number of probes in raw data",
                                           "detection P < 0.01",
                                           "only probes that start with cg",
-                                          "DMRcate"),
+                                          "DMRcate",
+                                          "after deleting probes on chrM"),
                         "Difference" = c("-",
                                          nb.probes.detectP - nb.probes ,
                                          nb.probes.detectP.cg - nb.probes.detectP,
-                                         nb.probes.cg.dmrcate - nb.probes.detectP.cg)
+                                         nb.probes.cg.dmrcate - nb.probes.detectP.cg,
+                                         nb.probes.cg.dmrcate.chrM - nb.probes.cg.dmrcate)
 )
 df.probes
 
 save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"))
 ```
 
-# Compute neuron proportion
+<!-- # Compute neuron proportion -->
 
-Data from  https://www.tandfonline.com/doi/full/10.4161/epi.23924
+<!-- Data from  https://www.tandfonline.com/doi/full/10.4161/epi.23924 -->
 
-- Input: Gasparoni_QNBMIQ_PCfiltered.RDS, pheno_df.RDS
+<!-- - Input: Gasparoni_QNBMIQ_PCfiltered.RDS, pheno_df.RDS -->
 
-- Output: pheno_withNeuronProp_df.RDS
+<!-- - Output: pheno_withNeuronProp_df.RDS -->
 
-```{R}
-objects <- load("../../CET/CETS_Image.RData")
-objects
-```
+<!-- ```{R} -->
+<!-- objects <- load("../../CET/CETS_Image.RData") -->
+<!-- objects -->
+<!-- ``` -->
 
-## Get reference profile from Caucasions + controls 
-```{R}
-idx <- list(
-  controlNeuron = pdBrain$celltype == "N" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian",
-  controlGlia   = pdBrain$celltype == "G" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian"
-)
+<!-- ## Get reference profile from Caucasions + controls  -->
+<!-- ```{R} -->
+<!-- idx <- list( -->
+<!--   controlNeuron = pdBrain$celltype == "N" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian", -->
+<!--   controlGlia   = pdBrain$celltype == "G" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian" -->
+<!-- ) -->
 
-refProfile <- getReference(brain, idx)
+<!-- refProfile <- getReference(brain, idx) -->
 
 
-##### 2. Estimate proportions of neurons in PFC samples ########################
+<!-- ##### 2. Estimate proportions of neurons in PFC samples ######################## -->
 
-### Limit to 10,000 cpgs in the refProfile dataset
-pfc <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim: 433656 59
+<!-- ### Limit to 10,000 cpgs in the refProfile dataset -->
+<!-- pfc <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim: 433656 59 -->
 
-selected <- rownames(pfc) %in% rownames(refProfile)
+<!-- selected <- rownames(pfc) %in% rownames(refProfile) -->
 
-pfc.refcpgs <- pfc[selected, ] 
+<!-- pfc.refcpgs <- pfc[selected, ]  -->
 
-### Estimate proportion of neurons
-prop <- data.frame(estProportion(pfc.refcpgs, profile = refProfile))
-colnames(prop) <- "prop.neuron"
+<!-- ### Estimate proportion of neurons -->
+<!-- prop <- data.frame(estProportion(pfc.refcpgs, profile = refProfile)) -->
+<!-- colnames(prop) <- "prop.neuron" -->
 
-##### 3. Merge pfc.refcpgs with phenotype file #################################
-pheno <- readRDS(paste0(data.dir.pca, "pheno_df.RDS"))
+<!-- ##### 3. Merge pfc.refcpgs with phenotype file ################################# -->
+<!-- pheno <- readRDS(paste0(data.dir.pca, "pheno_df.RDS")) -->
 
-pheno_final <- merge(
-  pheno,
-  prop,
-  by.x = "sample",
-  by.y = "row.names"
-)
+<!-- pheno_final <- merge( -->
+<!--   pheno, -->
+<!--   prop, -->
+<!--   by.x = "sample", -->
+<!--   by.y = "row.names" -->
+<!-- ) -->
 
-saveRDS(pheno_final, paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))
-```
+<!-- saveRDS(pheno_final, paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) -->
+<!-- ``` -->
 
-# Linear regression by cpgs Methylation 
+<!-- # Linear regression by cpgs Methylation  -->
 
-Input: 
+<!-- Input:  -->
 
-- Gasparoni_QNBMIQ_PCfiltered.RDS,
-- pheno59_withNeuronProp_df.RDS
+<!-- - Gasparoni_QNBMIQ_PCfiltered.RDS, -->
+<!-- - pheno59_withNeuronProp_df.RDS -->
 
-Output:
+<!-- Output: -->
 
-- Gasparoni_single_cpg_pVal_df.csv
+<!-- - Gasparoni_single_cpg_pVal_df.csv -->
 
-## Import datasets
+<!-- ## Import datasets -->
 
-```{R}
-beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) 
-pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) 
-```
+<!-- ```{R} -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS"))  -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))  -->
+<!-- ``` -->
 
-## Test all cpgs
+<!-- ## Test all cpgs -->
 
-```{R, eval = TRUE}
-### Compute M values
-mval_mat <- log2(beta_mat / (1 - beta_mat))
+<!-- ```{R, eval = TRUE} -->
+<!-- ### Compute M values -->
+<!-- mval_mat <- log2(beta_mat / (1 - beta_mat)) -->
 
-pheno_df$Sample <- pheno_df$sample
+<!-- pheno_df$Sample <- pheno_df$sample -->
 
-identical(pheno_df$Sample, colnames(mval_mat))
+<!-- identical(pheno_df$Sample, colnames(mval_mat)) -->
 
-pheno_df$sex <- as.factor(pheno_df$sex)
-pheno_df$slide <- as.factor(pheno_df$slide)
-# If rosmap cohort, don't forget batch effect
+<!-- pheno_df$sex <- as.factor(pheno_df$sex) -->
+<!-- pheno_df$slide <- as.factor(pheno_df$slide) -->
+<!-- # If rosmap cohort, don't forget batch effect -->
 
-str(pheno_df)
+<!-- str(pheno_df) -->
 
-is(pheno_df$stage,"numeric")
-is(pheno_df$age.brain,"numeric")
-is(pheno_df$prop.neuron,"numeric")
-```
+<!-- is(pheno_df$stage,"numeric") -->
+<!-- is(pheno_df$age.brain,"numeric") -->
+<!-- is(pheno_df$prop.neuron,"numeric") -->
+<!-- ``` -->
 
 
-```{R, eval = FALSE}
-predictors_char <- "stage"
-covariates_char <- c("age.brain", "sex", "prop.neuron", "slide")
+<!-- ```{R, eval = FALSE} -->
+<!-- predictors_char <- "stage" -->
+<!-- covariates_char <- c("age.brain", "sex", "prop.neuron", "slide") -->
 
 
-doParallel::registerDoParallel(cores = parallel::detectCores()/2)
-devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
+<!-- doParallel::registerDoParallel(cores = parallel::detectCores()/2) -->
+<!-- devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e") -->
 
-results_ordered_df <- plyr::adply(mval_mat,1, function(row){
-  
-  sumOneRegion_df <- data.frame(t(row))
-  
-  result <- TestSingleRegion(
-    predictors_char = predictors_char,
-    covariates_char = covariates_char,
-    pheno_df = pheno_df,
-    sumOneRegion_df = sumOneRegion_df
-  )
-  result
-}, .progress = "time",.parallel = TRUE,.id = "cpg")
-colnames(results_ordered_df)[1] <- "cpg"
-
-identical(row.names(mval_mat), results_ordered_df$cpg %>% as.character())
-
-results_ordered_df$fdr <- p.adjust(
-    results_ordered_df$pValue,
-    method = "fdr"
-)
-
-write.csv(
-  results_ordered_df,
-  paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"),
-  row.names = FALSE
-)
-```
-
-```{R}
-results_ordered_df <- readr::read_csv(
-  paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"),
-  col_types = readr::cols())
-results_ordered_df
-```
-
-
-# Linear regression by regions median Methylation 
-
-## Residuals control and coMethylated Regions
-
-1. Take residuals
-2. Find co-methylated regions
-
-Input: 
-
-- QNBMIQ_PCfiltered
-- pheno_withNeuronProp_df
-
-Output: 
-
-- QNBMIQ_PCfiltered_mvalResiduals
-- residuals_cometh_ls
-
-### Residuals
-
-```{R, eval = FALSE}
-##### 1. Import datasets #######################################################
-beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim:433656 59
-pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) #dim:59 7
-
-### Compute M values
-mvalue_mat <- log2(beta_mat / (1 - beta_mat))
-
-### Reorder samples based on pheno_df
-mvalue_mat <- mvalue_mat[, pheno_df$sample]
-
-identical(colnames(mvalue_mat),  pheno_df$sample)
-
-### Take residuals
-lmF <- function(mval){
-  fitE <- lm(
-    as.numeric(mval) ~ age.brain + sex + prop.neuron + as.character(slide), #add batch if rosmap
-    data = pheno_df,
-    na.action = na.exclude
-  )
-  residuals (fitE)
-}
-doParallel::registerDoParallel(cores = 4)
-resid <- plyr::adply(mvalue_mat,1,.fun = lmF,.progress = "time",.parallel = TRUE)
-rownames(resid) <- resid[,1]
-resid[,1] <- NULL
-colnames(resid) <- colnames(mvalue_mat)
-dim(resid)
-dim(mvalue_mat)
-
-### Save dataset
-saveRDS(
-  resid,
-  paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS")
-)
-```
-
-### Find co-methylated regions
-
-```{R, eval = FALSE}
-### Import datasets
-mvalue_residuals_mat <- readRDS(
-  paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS")
-)
-
-### Call in functions
-library(coMethDMR)
-library(BiocParallel)
-
-probes.cluster.all <- coMethDMR::getPredefinedCluster(arrayType = "450k",
-                                                      clusterType = "regions")
-
-ncores <- parallel::detectCores()/2
-### Find co-methylated clusters
-coMeth_ls <- CoMethAllRegions(
-  dnam = mvalue_residuals_mat,      
-  betaToM = FALSE,                   
-  CpGs_ls = probes.cluster.all,
-  arrayType = "450k",
-  rDropThresh_num = 0.4,
-  minPairwiseCorr = NULL,
-  method = "spearman",             
-  returnAllCpGs = TRUE,              
-  output = "all",
-  nCores_int = ncores,
-  progressbar = FALSE
-)
-
-saveRDS(
-  coMeth_ls,
-  paste0(data.dir.residuals,"Gasparoni_residuals_cometh_input_ls.RDS")
-)
-```
-
-## Linear regression by regions median Methylation 
-
-1. Calculate medians by cluster and sample
-2. linear regression
-
-Input: 
-
-- QNBMIQ_PCfiltered,
-- pheno_withNeuronProp_df
-- residuals_cometh_input_ls
-
-Output: 
-
-- info_df
-- mediansMval_df
-- linear_df_aging
-
-### Calculate medians by cluster and sample
-
-```{R, eval = FALSE}
-### Import datasets
-beta_mat <- readRDS(paste0(data.dir.pca,
-                           "Gasparoni_QNBMIQ_PCfiltered.RDS"))
-pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))
-mval_mat <- log2(beta_mat / (1 - beta_mat)) %>% as.matrix()
-coMeth_ls <- readRDS(
-  paste0(data.dir.residuals, "Gasparoni_residuals_cometh_input_ls.RDS")
-)
-
-### Create info dataset
-input_cometh <- data.frame(
-  inputRegion = coMeth_ls$inputRegion_chr,
-  nCoMethRegion = coMeth_ls$nCoMethRegions_num,
-  coMethRegion = names(coMeth_ls$coMeth_ls),
-  nCpGs = unlist(lapply(coMeth_ls$coMeth_ls, length), use.names = FALSE),
-  stringsAsFactors = FALSE
-)
-
-input_cometh_nodup <- input_cometh[
-  !duplicated(input_cometh$coMethRegion),
-  ]
-colnames(input_cometh_nodup) <- c(
-  paste0(cohort, "_inputRegion"),
-  paste0(cohort, "_nCoMethRegion"),
-  paste0(cohort, "_coMethRegion"),
-  paste0(cohort, "_nCpGs")
-)
-
-saveRDS(
-  input_cometh_nodup,
-  paste0(data.dir.median, cohort,"_info_df.rds")
-)
-
-### Take median of probes in each cluster for each sample
-filename <-  paste0(paste0(data.dir.median, cohort, "_mediansMval_df.rds"))
-library(robustbase)
-mval_mat <- mval_mat[rownames(mval_mat) %in% unlist(coMeth_ls$coMeth_ls),]
-if(!file.exists(filename)){
-  medianMval.df <- plyr::ldply(
-    coMeth_ls$coMeth_ls[!duplicated(names(coMeth_ls$coMeth_ls))],
-    function(probes){
-      colMedians(mval_mat[as.character(probes),], na.rm = TRUE)
-    },
-    .progress = "time"
-  )
-  medianMval.df$.id <- NULL
-  colnames(medianMval.df) <- colnames(mval_mat)
-  saveRDS(medianMval.df, file = filename)
-} else {
-  medianMval.df <- readRDS(filename)
-}
-```
-
-### Test all regions -- linear regressions
-
-```{R, eval = TRUE}
-### Import datasets
-cohort <- "Gasparoni"
-info_df <- readRDS(dir(data.dir.median, pattern = "info", full.names = TRUE))
-mediansMval_df <- readRDS(dir(data.dir.median, pattern = "mediansMval", full.names = TRUE))
-pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) 
-
-### Check variables before fitting model
-pheno_df$Sample <- pheno_df$sample
-identical(pheno_df$Sample, colnames(mediansMval_df))
-
-pheno_df$sex <- as.factor(pheno_df$sex)
-pheno_df$slide <- as.factor(pheno_df$slide)
-# If rosmap cohort, don't forget batch effect
-
-str(pheno_df)
-```
-
-```{R, eval = FALSE}
-devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
-
-predictors_char <- "stage"
-covariates_char <- c("age.brain", "sex", "prop.neuron", "slide")
-
-res_df <- TestAllRegions_noInfo(
-  predictors_char = predictors_char,
-  covariates_char = covariates_char,
-  pheno_df = pheno_df,
-  summarizedRegions_df = mediansMval_df
-)
-
-colnames(res_df) <- c(
-  paste0(cohort, "_estimate"),
-  paste0(cohort, "_se"),
-  paste0(cohort, "_pVal"),
-  paste0(cohort, "_fdr")
-)
-
-res_withInfo_df <- cbind(info_df, res_df)
-
-saveRDS(
-  res_withInfo_df,
-  paste0(data.dir.median,  cohort, "_linear_df.rds")
-)
-```
-
-```{R}
-file <- dir(data.dir.median,pattern = paste0(".*linear_df"),
-            recursive = T,
-            full.names = TRUE,
-            ignore.case = T)
-file
-res_withInfo_df <- readRDS(file)
-dim(res_withInfo_df)
-res_withInfo_df
-```
-
-# Data final
-
-```{R}
-dir(path = data.dir,recursive = T, pattern = ".rda|.csv|.RDS")
-```
-
-# Session information
-```{R}
-devtools::session_info()
-```
+<!-- results_ordered_df <- plyr::adply(mval_mat,1, function(row){ -->
+
+<!--   sumOneRegion_df <- data.frame(t(row)) -->
+
+<!--   result <- TestSingleRegion( -->
+<!--     predictors_char = predictors_char, -->
+<!--     covariates_char = covariates_char, -->
+<!--     pheno_df = pheno_df, -->
+<!--     sumOneRegion_df = sumOneRegion_df -->
+<!--   ) -->
+<!--   result -->
+<!-- }, .progress = "time",.parallel = TRUE,.id = "cpg") -->
+<!-- colnames(results_ordered_df)[1] <- "cpg" -->
+
+<!-- identical(row.names(mval_mat), results_ordered_df$cpg %>% as.character()) -->
+
+<!-- results_ordered_df$fdr <- p.adjust( -->
+<!--     results_ordered_df$pValue, -->
+<!--     method = "fdr" -->
+<!-- ) -->
+
+<!-- write.csv( -->
+<!--   results_ordered_df, -->
+<!--   paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"), -->
+<!--   row.names = FALSE -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ```{R} -->
+<!-- results_ordered_df <- readr::read_csv( -->
+<!--   paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"), -->
+<!--   col_types = readr::cols()) -->
+<!-- results_ordered_df -->
+<!-- ``` -->
+
+
+<!-- # Linear regression by regions median Methylation  -->
+
+<!-- ## Residuals control and coMethylated Regions -->
+
+<!-- 1. Take residuals -->
+<!-- 2. Find co-methylated regions -->
+
+<!-- Input:  -->
+
+<!-- - QNBMIQ_PCfiltered -->
+<!-- - pheno_withNeuronProp_df -->
+
+<!-- Output:  -->
+
+<!-- - QNBMIQ_PCfiltered_mvalResiduals -->
+<!-- - residuals_cometh_ls -->
+
+<!-- ### Residuals -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- ##### 1. Import datasets ####################################################### -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim:433656 59 -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) #dim:59 7 -->
+
+<!-- ### Compute M values -->
+<!-- mvalue_mat <- log2(beta_mat / (1 - beta_mat)) -->
+
+<!-- ### Reorder samples based on pheno_df -->
+<!-- mvalue_mat <- mvalue_mat[, pheno_df$sample] -->
+
+<!-- identical(colnames(mvalue_mat),  pheno_df$sample) -->
+
+<!-- ### Take residuals -->
+<!-- lmF <- function(mval){ -->
+<!--   fitE <- lm( -->
+<!--     as.numeric(mval) ~ age.brain + sex + prop.neuron + as.character(slide), #add batch if rosmap -->
+<!--     data = pheno_df, -->
+<!--     na.action = na.exclude -->
+<!--   ) -->
+<!--   residuals (fitE) -->
+<!-- } -->
+<!-- doParallel::registerDoParallel(cores = 4) -->
+<!-- resid <- plyr::adply(mvalue_mat,1,.fun = lmF,.progress = "time",.parallel = TRUE) -->
+<!-- rownames(resid) <- resid[,1] -->
+<!-- resid[,1] <- NULL -->
+<!-- colnames(resid) <- colnames(mvalue_mat) -->
+<!-- dim(resid) -->
+<!-- dim(mvalue_mat) -->
+
+<!-- ### Save dataset -->
+<!-- saveRDS( -->
+<!--   resid, -->
+<!--   paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ### Find co-methylated regions -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- ### Import datasets -->
+<!-- mvalue_residuals_mat <- readRDS( -->
+<!--   paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
+<!-- ) -->
+
+<!-- ### Call in functions -->
+<!-- library(coMethDMR) -->
+<!-- library(BiocParallel) -->
+
+<!-- probes.cluster.all <- coMethDMR::getPredefinedCluster(arrayType = "450k", -->
+<!--                                                       clusterType = "regions") -->
+
+<!-- ncores <- parallel::detectCores()/2 -->
+<!-- ### Find co-methylated clusters -->
+<!-- coMeth_ls <- CoMethAllRegions( -->
+<!--   dnam = mvalue_residuals_mat,       -->
+<!--   betaToM = FALSE,                    -->
+<!--   CpGs_ls = probes.cluster.all, -->
+<!--   arrayType = "450k", -->
+<!--   rDropThresh_num = 0.4, -->
+<!--   minPairwiseCorr = NULL, -->
+<!--   method = "spearman",              -->
+<!--   returnAllCpGs = TRUE,               -->
+<!--   output = "all", -->
+<!--   nCores_int = ncores, -->
+<!--   progressbar = FALSE -->
+<!-- ) -->
+
+<!-- saveRDS( -->
+<!--   coMeth_ls, -->
+<!--   paste0(data.dir.residuals,"Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ## Linear regression by regions median Methylation  -->
+
+<!-- 1. Calculate medians by cluster and sample -->
+<!-- 2. linear regression -->
+
+<!-- Input:  -->
+
+<!-- - QNBMIQ_PCfiltered, -->
+<!-- - pheno_withNeuronProp_df -->
+<!-- - residuals_cometh_input_ls -->
+
+<!-- Output:  -->
+
+<!-- - info_df -->
+<!-- - mediansMval_df -->
+<!-- - linear_df_aging -->
+
+<!-- ### Calculate medians by cluster and sample -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- ### Import datasets -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, -->
+<!--                            "Gasparoni_QNBMIQ_PCfiltered.RDS")) -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) -->
+<!-- mval_mat <- log2(beta_mat / (1 - beta_mat)) %>% as.matrix() -->
+<!-- coMeth_ls <- readRDS( -->
+<!--   paste0(data.dir.residuals, "Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!-- ) -->
+
+<!-- ### Create info dataset -->
+<!-- input_cometh <- data.frame( -->
+<!--   inputRegion = coMeth_ls$inputRegion_chr, -->
+<!--   nCoMethRegion = coMeth_ls$nCoMethRegions_num, -->
+<!--   coMethRegion = names(coMeth_ls$coMeth_ls), -->
+<!--   nCpGs = unlist(lapply(coMeth_ls$coMeth_ls, length), use.names = FALSE), -->
+<!--   stringsAsFactors = FALSE -->
+<!-- ) -->
+
+<!-- input_cometh_nodup <- input_cometh[ -->
+<!--   !duplicated(input_cometh$coMethRegion), -->
+<!--   ] -->
+<!-- colnames(input_cometh_nodup) <- c( -->
+<!--   paste0(cohort, "_inputRegion"), -->
+<!--   paste0(cohort, "_nCoMethRegion"), -->
+<!--   paste0(cohort, "_coMethRegion"), -->
+<!--   paste0(cohort, "_nCpGs") -->
+<!-- ) -->
+
+<!-- saveRDS( -->
+<!--   input_cometh_nodup, -->
+<!--   paste0(data.dir.median, cohort,"_info_df.rds") -->
+<!-- ) -->
+
+<!-- ### Take median of probes in each cluster for each sample -->
+<!-- filename <-  paste0(paste0(data.dir.median, cohort, "_mediansMval_df.rds")) -->
+<!-- library(robustbase) -->
+<!-- mval_mat <- mval_mat[rownames(mval_mat) %in% unlist(coMeth_ls$coMeth_ls),] -->
+<!-- if(!file.exists(filename)){ -->
+<!--   medianMval.df <- plyr::ldply( -->
+<!--     coMeth_ls$coMeth_ls[!duplicated(names(coMeth_ls$coMeth_ls))], -->
+<!--     function(probes){ -->
+<!--       colMedians(mval_mat[as.character(probes),], na.rm = TRUE) -->
+<!--     }, -->
+<!--     .progress = "time" -->
+<!--   ) -->
+<!--   medianMval.df$.id <- NULL -->
+<!--   colnames(medianMval.df) <- colnames(mval_mat) -->
+<!--   saveRDS(medianMval.df, file = filename) -->
+<!-- } else { -->
+<!--   medianMval.df <- readRDS(filename) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ### Test all regions -- linear regressions -->
+
+<!-- ```{R, eval = TRUE} -->
+<!-- ### Import datasets -->
+<!-- cohort <- "Gasparoni" -->
+<!-- info_df <- readRDS(dir(data.dir.median, pattern = "info", full.names = TRUE)) -->
+<!-- mediansMval_df <- readRDS(dir(data.dir.median, pattern = "mediansMval", full.names = TRUE)) -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))  -->
+
+<!-- ### Check variables before fitting model -->
+<!-- pheno_df$Sample <- pheno_df$sample -->
+<!-- identical(pheno_df$Sample, colnames(mediansMval_df)) -->
+
+<!-- pheno_df$sex <- as.factor(pheno_df$sex) -->
+<!-- pheno_df$slide <- as.factor(pheno_df$slide) -->
+<!-- # If rosmap cohort, don't forget batch effect -->
+
+<!-- str(pheno_df) -->
+<!-- ``` -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e") -->
+
+<!-- predictors_char <- "stage" -->
+<!-- covariates_char <- c("age.brain", "sex", "prop.neuron", "slide") -->
+
+<!-- res_df <- TestAllRegions_noInfo( -->
+<!--   predictors_char = predictors_char, -->
+<!--   covariates_char = covariates_char, -->
+<!--   pheno_df = pheno_df, -->
+<!--   summarizedRegions_df = mediansMval_df -->
+<!-- ) -->
+
+<!-- colnames(res_df) <- c( -->
+<!--   paste0(cohort, "_estimate"), -->
+<!--   paste0(cohort, "_se"), -->
+<!--   paste0(cohort, "_pVal"), -->
+<!--   paste0(cohort, "_fdr") -->
+<!-- ) -->
+
+<!-- res_withInfo_df <- cbind(info_df, res_df) -->
+
+<!-- saveRDS( -->
+<!--   res_withInfo_df, -->
+<!--   paste0(data.dir.median,  cohort, "_linear_df.rds") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ```{R} -->
+<!-- file <- dir(data.dir.median,pattern = paste0(".*linear_df"), -->
+<!--             recursive = T, -->
+<!--             full.names = TRUE, -->
+<!--             ignore.case = T) -->
+<!-- file -->
+<!-- res_withInfo_df <- readRDS(file) -->
+<!-- dim(res_withInfo_df) -->
+<!-- res_withInfo_df -->
+<!-- ``` -->
+
+<!-- # Data final -->
+
+<!-- ```{R} -->
+<!-- dir(path = data.dir,recursive = T, pattern = ".rda|.csv|.RDS") -->
+<!-- ``` -->
+
+<!-- # Session information -->
+<!-- ```{R} -->
+<!-- devtools::session_info() -->
+<!-- ``` -->
