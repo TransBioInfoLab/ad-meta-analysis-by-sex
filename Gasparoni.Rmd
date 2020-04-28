@@ -274,10 +274,6 @@ load(paste0(data.dir.probes.qc, "beta_CG_XY_SNPfiltered_mat.rda"))
 
 ## Quantile normalization
 
-```{R, message = FALSE, results = 'hide'}
-library(lumi)
-```
-
 ### Check if sex chrom have higher/lower intensities than autosomes
 
 #### Create function to extract separate matrix for each chromosome
@@ -294,8 +290,8 @@ probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
   dplyr::select(c("seqnames","start","end"))
 probes.info$seqnames <- as.character(probes.info$seqnames)
 
-findBetaChr <- function(chrom){
-  beta_mat %>%
+findBetaChr <- function(data, chrom){
+  data %>%
     as.data.frame() %>% # has to turn matrix into df for next step
     tibble::rownames_to_column() %>% # turn rownames to a column, so rownames won't be deleted after filtering rows in next step
     filter(rowname %in% row.names(probes.info[probes.info$seqnames == chrom,])) %>%
@@ -309,7 +305,7 @@ findBetaChr <- function(chrom){
 ##### on chrX
 
 ```{R}
-betaChrX <- findBetaChr(chrom = "chrX")
+betaChrX <- findBetaChr(data = beta_mat, chrom = "chrX")
 betaChrX_long <- data.frame(
   beta = as.vector(betaChrX),
   sample = rep(substr(colnames(betaChrX), 1,10), each = nrow(betaChrX)),
@@ -320,7 +316,6 @@ betaChrX_long <- merge(
   by = "sample",
   sort = FALSE
 )
-betaChrX_long$plotNum <- betaChrX_long %>%
   
 p <- ggplot(betaChrX_long,
        aes(x = sample, y = beta, fill = sex)) +
@@ -362,15 +357,25 @@ p <- ggplot(betaChrY_long,
   facet_wrap(~sex)
 print(p)
 ```
-#### Boxplot
+
+#### Boxplot of methylation by chromosomes  
 
 ```{R}
-data.frame(beta = as.vector(beta_mat.chr), chrom = chrom, stringsAsFactors = FALSE)
-chr <- paste0("chr", c(1:22, "X", "Y"))
-betaChr_ls <- lapply(seq_along(chr), function(i){
-  beta_mat.chrfindBetaChr(chrom = chr[i])
+chrAuto <- paste0("chr", 1:22)
+betaChrAuto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
 })
-betaChr_df <- do.call(rbind, betaChr_ls)
+betaChrAuto_df <- do.call(rbind, betaChrAuto_ls)
+
+chrSex <- paste0("chr", c("X", "Y"))
+betaChrSex_ls <- lapply(seq_along(chrSex), function(i){
+  dat <- findBetaChr(data = beta_mat, chrom = chrSex[i])
+  data.frame(beta = as.vector(dat), chrom = chrSex[i], stringsAsFactors = FALSE)
+})
+betaChrSex_df <- do.call(rbind, betaChrSex_ls)
+
+betaChr_df <- rbind(betaChrAuto_df, betaChrSex_df)
 
 # # No enough memory to load all the data points and plot the figure, so use function boxplot instead
 # ggplot(betaChr_df,
@@ -383,13 +388,153 @@ betaChr_df <- do.call(rbind, betaChr_ls)
 #   theme_bw()
 
 boxplot(
-  beta ~ chrom, data = betaChr_df, xlab = "chromosome type", ylab = "DNA methylation beta values",
-  main = "DNA methylations")
+  beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes")
+
+pdf(file = paste0(data.dir.probes.normalization, "beta_vs_chrom.pdf"))
+boxplot(
+  beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes")
+dev.off()
 ```
 
+#### Boxplot of methylation by gender on autosomes, X, Y
+
+```{R, message = FALSE, results = 'hide'}
+library(quantro)
+```
+
+##### on autosomes
+
 ```{R}
-betaQN <- lumiN(x.lumi = beta_mat, method = "quantile")
-dim(betaQN)
+chrAuto <- paste0("chr", 1:22)
+betaChrAuto_ls <- lapply(seq_along(chrAuto), function(i){findBetaChr(data = beta_mat, chrom = chrAuto[i])})
+betaChrAuto_df <- do.call(rbind, betaChrAuto_ls)
+matboxplot(betaChrAuto_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### on chrX 
+
+```{R}
+betaChrX_df <- findBetaChr(data = beta_mat, chrom = "chrX")
+matboxplot(betaChrX_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### on chrY
+
+```{R}
+betaChrY_df <- findBetaChr(data = beta_mat,chrom = "chrY")
+matboxplot(betaChrY_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome Y) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### save plots
+
+```{R}
+pdf (
+  paste0(data.dir.probes.normalization, "boxPlotBeforeNormalization.pdf")
+)
+
+matboxplot(betaChrAuto_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaChrX_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaChrY_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome Y) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+dev.off()
+```
+
+### normalization by group
+
+```{R, message = FALSE, results = 'hide'}
+library(lumi)
+```
+
+#### split beta_mat into sub-matrics by females autosomes, females X, males autosomes, males X, males Y
+
+```{R}
+### split matrix by sex first
+beta_mat_female <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "F"]]
+beta_mat_male <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "M"]]
+
+### split female beta matrix by chromosome (auto, X)
+chrAuto <- paste0("chr", 1:22)
+beta_mat_female_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  findBetaChr(data = beta_mat_female, chrom = chrAuto[i])})
+beta_mat_female_auto <- do.call(rbind, beta_mat_female_auto_ls)
+
+beta_mat_female_X <- findBetaChr(data = beta_mat_female, chrom = "chrX")
+
+### split male beta matrix by chromosome (auto, X, Y)
+chrAuto <- paste0("chr", 1:22)
+beta_mat_male_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  findBetaChr(data = beta_mat_male, chrom = chrAuto[i])})
+beta_mat_male_auto <- do.call(rbind, beta_mat_male_auto_ls)
+
+beta_mat_male_X <- findBetaChr(data = beta_mat_male, chrom = "chrX")
+
+beta_mat_male_Y <- findBetaChr(data = beta_mat_male, chrom = "chrY")
+```
+
+#### normalization 
+
+```{R}
+### female autosomes
+betaQN_female_auto <- lumiN(x.lumi = beta_mat_female_auto, method = "quantile")
+dim(betaQN_female_auto)
+
+### female chromosome X
+betaQN_female_X <- lumiN(x.lumi = beta_mat_female_X, method = "quantile")
+dim(betaQN_female_X)
+
+### male autosomes
+betaQN_male_auto <- lumiN(x.lumi = beta_mat_male_auto, method = "quantile")
+dim(betaQN_male_auto)
+
+### male chromosome X
+betaQN_male_X <- lumiN(x.lumi = beta_mat_male_X, method = "quantile")
+dim(betaQN_male_X)
+
+### male chromosome Y
+betaQN_male_Y <- lumiN(x.lumi = beta_mat_male_Y, method = "quantile")
+dim(betaQN_male_Y)
 ```
 
 ## BMIQ
