@@ -75,22 +75,6 @@ identical(compareSex$predictedSex, compareSex$realSex)
 print(compareSex)
 ```
 
-# Data Pre-processing
-
-Description: 
-
-- Read in idat files and remove duplicated samples
-
-Input: 
-
-- idat files
-
-Output: 
-
-- RGSet.RDS
-- phenoData
-- BetaMatrixRaw
-
 # Data QC 
 
 ## Bilsufite conversion filtering
@@ -317,7 +301,7 @@ betaChrX_long <- merge(
   sort = FALSE
 )
   
-p <- ggplot(betaChrX_long,
+ggplot(betaChrX_long,
        aes(x = sample, y = beta, fill = sex)) +
   stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
   geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
@@ -327,13 +311,12 @@ p <- ggplot(betaChrX_long,
   theme_bw() +
   theme(legend.position = "none", axis.text.x = element_blank()) +
   facet_wrap(~sex)
-print(p)
 ```
 
 ##### on chrY
 
 ```{R}
-betaChrY <- findBetaChr(chrom = "chrY")
+betaChrY <- findBetaChr(data = beta_mat, chrom = "chrY")
 betaChrY_long <- data.frame(
   beta = as.vector(betaChrY),
   sample = rep(substr(colnames(betaChrY), 1,10), each = nrow(betaChrY)),
@@ -345,7 +328,7 @@ betaChrY_long <- merge(
   sort = FALSE
 )
 
-p <- ggplot(betaChrY_long,
+ggplot(betaChrY_long,
        aes(x = sample, y = beta, fill = sex)) +
   stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
   geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
@@ -355,7 +338,6 @@ p <- ggplot(betaChrY_long,
   theme_bw() +
   theme(legend.position = "none", axis.text.x = element_blank()) +
   facet_wrap(~sex)
-print(p)
 ```
 
 #### Boxplot of methylation by chromosomes  
@@ -553,7 +535,7 @@ library(sm)
 
 ##### for females
 
-```{R, eval = FALSE, include = FALSE}
+```{R}
 ### Order annotation in the same order as beta matrix
 annotType <- sesameDataGet("HM450.hg19.manifest")
 annotType$designTypeNumeric <- ifelse(annotType$designType == "I",1,2)
@@ -563,18 +545,17 @@ betaQNCompleteCol1_female_auto <- betaQN_female_auto[complete.cases(betaQN_femal
 annotTypeCompleteCol1_female_auto <- annotType[row.names(betaQNCompleteCol1_female_auto), ]
 
 sm.density.compare(
-  betaQNCompleteCol1_female_auto[,1],
-  annotTypeCompleteCol1_female_auto$designTypeNumeric
-)
-title(main = "Density plot for type I and type II probes on female autosomes")
+    betaQNCompleteCol1_female_auto[,1],
+    annotTypeCompleteCol1_female_auto$designTypeNumeric) +
+  title(main = "Density plot for type I and type II probes on female autosomes")
 
 ### Summary table
 type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_auto),names(annotType))]
 table(type12)
 ```
-```{R, eval = FALSE}
+```{R}
 set.seed(946)
-doParallel::registerDoParallel(cores = 6)
+doParallel::registerDoParallel(cores = 4)
 betaQN_BMIQ_female_auto <- plyr::aaply(
   betaQN_female_auto, 2,
   function(x){
@@ -587,7 +568,7 @@ colnames(betaQN_BMIQ_female_auto) <- substr(colnames(betaQN_BMIQ_female_auto),1,
 
 ##### for males
 
-```{R, eval = FALSE, include = FALSE}
+```{R}
 ### Density plot for type I and type II probes
 betaQNCompleteCol1_male_auto <- betaQN_male_auto[complete.cases(betaQN_male_auto[,1]), ]
 annotTypeCompleteCol1_male_auto <- annotType[row.names(betaQNCompleteCol1_male_auto), ]
@@ -602,9 +583,9 @@ title(main = "Density plot for type I and type II probes on male autosomes")
 type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_auto),names(annotType))]
 table(type12)
 ```
-```{R, eval = FALSE}
+```{R}
 set.seed(946)
-doParallel::registerDoParallel(cores = 6)
+doParallel::registerDoParallel(cores = 4)
 betaQN_BMIQ_male_auto <- plyr::aaply(
   betaQN_male_auto, 2,
   function(x){
@@ -619,7 +600,7 @@ colnames(betaQN_BMIQ_male_auto) <- substr(colnames(betaQN_BMIQ_male_auto),1,stri
 
 ##### for females
 
-```{R, eval = FALSE, include = FALSE}
+```{R}
 ### Density plot for type I and type II probes
 betaQNCompleteCol1_female_X <- betaQN_female_X[complete.cases(betaQN_female_X[,1]), ]
 annotTypeCompleteCol1_female_X <- annotType[row.names(betaQNCompleteCol1_female_X), ]
@@ -637,7 +618,7 @@ table(type12)
 
 ##### for males
 
-```{R, eval = FALSE, include = FALSE}
+```{R}
 ### Density plot for type I and type II probes
 betaQNCompleteCol1_male_X <- betaQN_male_X[complete.cases(betaQN_male_X[,1]), ]
 annotTypeCompleteCol1_male_X <- annotType[row.names(betaQNCompleteCol1_male_X), ]
@@ -655,7 +636,7 @@ table(type12)
 
 #### on chromosome Y
 
-```{R, eval = FALSE, include = FALSE}
+```{R}
 ### Density plot for type I and type II probes
 betaQNCompleteCol1_male_Y <- betaQN_male_Y[complete.cases(betaQN_male_Y[,1]), ]
 annotTypeCompleteCol1_male_Y <- annotType[row.names(betaQNCompleteCol1_male_Y), ]
@@ -716,7 +697,7 @@ save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.prob
 
 ```
 
-## Outliers detection - PCA analysis
+# Outliers detection - PCA analysis
 
 - Select most variable probes and perform PCA analysis
 
@@ -744,7 +725,7 @@ devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d
 load(paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
 ```
 
-### for females  
+## for females  
 
 ```{R}
 pheno_female_df <- pheno_df %>% filter(sex == "F")
@@ -819,7 +800,6 @@ byStage <- plotPCA(
 )
 ```
 
-
 ```{R}
 ### Filter samples by PCA, save files
 noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
@@ -830,7 +810,7 @@ pheno_female_df <- pheno_female_df[pheno_female_df$sample %in% rownames(noOutlie
 saveRDS(pheno_female_df, paste0(data.dir.pca, "pheno_female_df.RDS"))
 ```
 
-### for males  
+## for males  
 
 ```{R}
 pheno_male_df <- pheno_df %>% filter(sex == "M")
@@ -971,7 +951,7 @@ ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20)
 df.samples <- data.frame("Number of samples" =  c(nb.samples, 
                                                   nb.samples.bc.filtered,
                                                   nb.samples.with.clinical, 
-                                                  nb.samples.with.clinical.after.pca.female + b.samples.with.clinical.after.pca.male),
+                                                  nb.samples.with.clinical.after.pca.female + nb.samples.with.clinical.after.pca.male),
                          "Description" = c("total number of samples",
                                            "samples with bisulfate conversion > 88",
                                            "samples with clinical data",
@@ -979,7 +959,7 @@ df.samples <- data.frame("Number of samples" =  c(nb.samples,
                          "Difference" = c("-",
                                           nb.samples.bc.filtered - nb.samples ,
                                           nb.samples.with.clinical - nb.samples.bc.filtered ,
-                                          nb.samples.with.clinical.after.pca.female + b.samples.with.clinical.after.pca.male - nb.samples.with.clinical)
+                                          nb.samples.with.clinical.after.pca.female + nb.samples.with.clinical.after.pca.male - nb.samples.with.clinical)
 )    
 df.samples           
 
