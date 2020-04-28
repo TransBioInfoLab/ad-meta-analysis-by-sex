@@ -30,59 +30,50 @@ library(minfi)
 
 ```{R}
 cohort <- "GASPARONI"
-data.dir <- file.path("DATASETS/",cohort,"/") 
-data.dir.table <- "DATASETS/Summary_Table/" 
-data.dir.raw <- file.path(data.dir,"/step1_download/") 
-data.dir.read <- file.path(data.dir,"/step2_read_minfi/") 
-data.dir.bsfilter <- file.path(data.dir,"/step3_bsConvFilter/") 
-data.dir.clinical.filter <- file.path(data.dir,"/step4_clinical_available_filtering/") 
-data.dir.probes.qc <- file.path(data.dir,"/step5_probesQC_filtering/") 
-data.dir.probes.normalization <- file.path(data.dir,"/step6_normalization/") 
-data.dir.pca <- file.path(data.dir,"/step7_pca_filtering/") 
-data.dir.neuron <- file.path(data.dir,"/step8_neuron_comp/") 
-data.dir.single.cpg.pval <- file.path(data.dir,"/step9_single_cpg_pval/") 
-data.dir.residuals <- file.path(data.dir,"/step10_residuals/") 
-data.dir.median <- file.path(data.dir,"/step11_median/") 
+data.dir <- file.path("../DATASETS",cohort) 
+data.dir.table <- "../DATASETS/Summary_Table/" 
+data.dir.raw <- "../../coMethDMR_metaAnalysis/code_validation/Meta_analysis_code/DATASETS/GASPARONI/step2_read_minfi/"
+data.dir.bsfilter <- file.path(data.dir,"step2_bsConvFilter/") 
+data.dir.clinical.filter <- file.path(data.dir,"step3_clinical_available_filtering/") 
+data.dir.probes.qc <- file.path(data.dir,"step4_probesQC_filtering/") 
+data.dir.probes.normalization <- file.path(data.dir,"step5_normalization/") 
+data.dir.pca <- file.path(data.dir,"step6_pca_filtering/") 
+data.dir.neuron <- file.path(data.dir,"step7_neuron_comp/") 
+data.dir.single.cpg.pval <- file.path(data.dir,"step8_single_cpg_pval/") 
+data.dir.residuals <- file.path(data.dir,"step9_residuals/") 
+data.dir.median <- file.path(data.dir,"step10_median/") 
 for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarnings = FALSE)
 ```
 
-Required R libraries: `GEOquery` can be installed as following:
+# Confirm sex status sing DNA methylation values
 
-```{R, eval = FALSE}
-if (!requireNamespace("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
+```{R}
+load(file = paste0(data.dir.raw, "Gasparoni.rda"))
 
-BiocManager::install("GEOquery")
+# Create a MethylSet object from RGSet
+MSet <- preprocessRaw(RGSet)
+
+# Create [Genomic]MethylSet object
+GMset <- mapToGenome(MSet)
+
+# Get predicted sex status
+estSex <- getSex(GMset)
+
+# Compare predicted gender with phenotype gender
+realSex <- data.frame(
+  sample = paste(phenoData$geo_accession, phenoData$sentrix_id.ch1, phenoData$sentrix_position.ch1, sep = "_"),
+  realSex = phenoData$Sex.ch1,
+  stringsAsFactors = FALSE
+)
+compareSex <- merge(
+  as.data.frame(estSex), realSex,
+  by.x = "row.names",
+  by.y = "sample")
+
+identical(compareSex$predictedSex, compareSex$realSex)
+
+print(compareSex)
 ```
-
-Data from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE66351
-
-```{r synapse, eval = FALSE}
-library(GEOquery)
-library(SummarizedExperiment)
-test <- getGEO(GEO = "GSE66351",destdir = data.dir.raw)
-se <- test$GSE66351_series_matrix.txt.gz %>% makeSummarizedExperimentFromExpressionSet()
-```
-
-```{R, eval = FALSE}
-se <- se[,se$source_name_ch1  == "Frontal Cortex" &
-           se$characteristics_ch1 == "cell type: bulk" &
-           se$braak_stage.ch1 != "NA"]
-```
-
-We  will download Idat files for all our samples
-
-```{R, eval =  FALSE}
-files <- c(se$supplementary_file %>% as.character(),
-           se$supplementary_file.1 %>% as.character())
-dir.create(data.dir.raw,showWarnings = FALSE,recursive = TRUE)
-plyr::a_ply(files,.margins = 1,.fun = function(url){
-  out.file <- file.path(data.dir.raw,basename(url))
-  if(!file.exists(out.file)) downloader::download(url,out.file)
-  gunzip(out.file)
-},.progress = "time")
-```
-
 
 # Data Pre-processing
 
@@ -100,15 +91,6 @@ Output:
 - phenoData
 - BetaMatrixRaw
 
-```{R, eval = FALSE}
-RGSet <- read.metharray.exp(base = data.dir.raw,
-                            recursive = TRUE,
-                            verbose = TRUE) #dim: 622399 60
-phenoData <- colData(se)
-save(RGSet,phenoData, file = paste0(data.dir.read, "Gasparoni.rda")) 
-```
-
-
 # Data QC 
 
 ## Bilsufite conversion filtering
@@ -124,7 +106,7 @@ library(RPMM)
 
 
 ```{R}
-load(file = paste0(data.dir.read, "Gasparoni.rda"))
+load(file = paste0(data.dir.raw, "Gasparoni.rda"))
 bs <- data.frame(bisulfiteConversion = bscon(RGSet))
 bsFilteredOut <- row.names(bs)[bs$bisulfiteConversion < 88]
 nb.samples <- ncol(RGSet)
@@ -227,8 +209,7 @@ beta_mat <- beta_mat[grep("cg",rownames(beta_mat)),]
 dim(beta_mat) 
 nb.probes.detectP.cg <- nrow(beta_mat)
 
-##### 3. drop probes that are on X/Y ###########################################
-##### 4. drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe ##
+##### 3. drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe ##
 ```
 
 ```{R, message = FALSE, warning = FALSE}
@@ -239,9 +220,23 @@ beta_mat <- rmSNPandCH(
   mafcut = 0.01, 
   and = TRUE,
   rmcrosshyb = FALSE,
-  rmXY = TRUE
+  rmXY = FALSE
 ) 
 nb.probes.cg.dmrcate <- nrow(beta_mat)
+
+##### 4. drop probes in chrM ###################################################
+library(sesame)
+
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+
+beta_mat <- beta_mat[
+  row.names(beta_mat) %in% row.names(probes.info)[!probes.info$seqnames %in% "chrM"],
+]
+nb.probes.cg.dmrcate.chrM <- nrow(beta_mat)
 
 ##### 5. Output datasets #######################################################
 save(
@@ -249,6 +244,7 @@ save(
   nb.probes.detectP,
   nb.probes.detectP.cg,
   nb.probes.cg.dmrcate,
+  nb.probes.cg.dmrcate.chrM,
   beta_mat,
   file = paste0(data.dir.probes.qc, "beta_CG_XY_SNPfiltered_mat.rda")
 )
@@ -282,6 +278,114 @@ load(paste0(data.dir.probes.qc, "beta_CG_XY_SNPfiltered_mat.rda"))
 library(lumi)
 ```
 
+### Check if sex chrom have higher/lower intensities than autosomes
+
+#### Create function to extract separate matrix for each chromosome
+
+```{R, message = FALSE, results = 'hide'}
+library(sesame)
+library(ggplot2)
+```
+
+```{R}
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+
+findBetaChr <- function(chrom){
+  beta_mat %>%
+    as.data.frame() %>% # has to turn matrix into df for next step
+    tibble::rownames_to_column() %>% # turn rownames to a column, so rownames won't be deleted after filtering rows in next step
+    filter(rowname %in% row.names(probes.info[probes.info$seqnames == chrom,])) %>%
+    tibble::column_to_rownames() %>%
+    as.matrix()
+}
+```
+
+#### Compare beta values between gender
+
+##### on chrX
+
+```{R}
+betaChrX <- findBetaChr(chrom = "chrX")
+betaChrX_long <- data.frame(
+  beta = as.vector(betaChrX),
+  sample = rep(substr(colnames(betaChrX), 1,10), each = nrow(betaChrX)),
+  stringsAsFactors = FALSE
+)
+betaChrX_long <- merge(
+  betaChrX_long, pheno_df[, c("sample", "sex")],
+  by = "sample",
+  sort = FALSE
+)
+betaChrX_long$plotNum <- betaChrX_long %>%
+  
+p <- ggplot(betaChrX_long,
+       aes(x = sample, y = beta, fill = sex)) +
+  stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
+  geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+  scale_fill_grey(start=1, end=0.6) +
+  labs(x = "chromosome type", y = "DNA methylation beta values",
+       title = "DNA methylation level vs. chromosome type on chromosome X") +
+  theme_bw() +
+  theme(legend.position = "none", axis.text.x = element_blank()) +
+  facet_wrap(~sex)
+print(p)
+```
+
+##### on chrY
+
+```{R}
+betaChrY <- findBetaChr(chrom = "chrY")
+betaChrY_long <- data.frame(
+  beta = as.vector(betaChrY),
+  sample = rep(substr(colnames(betaChrY), 1,10), each = nrow(betaChrY)),
+  stringsAsFactors = FALSE
+)
+betaChrY_long <- merge(
+  betaChrY_long, pheno_df[, c("sample", "sex")],
+  by = "sample",
+  sort = FALSE
+)
+
+p <- ggplot(betaChrY_long,
+       aes(x = sample, y = beta, fill = sex)) +
+  stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
+  geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+  scale_fill_grey(start=1, end=0.6) +
+  labs(x = "chromosome type", y = "DNA methylation beta values",
+       title = "DNA methylation level vs. chromosome type on chromosome Y") +
+  theme_bw() +
+  theme(legend.position = "none", axis.text.x = element_blank()) +
+  facet_wrap(~sex)
+print(p)
+```
+#### Boxplot
+
+```{R}
+data.frame(beta = as.vector(beta_mat.chr), chrom = chrom, stringsAsFactors = FALSE)
+chr <- paste0("chr", c(1:22, "X", "Y"))
+betaChr_ls <- lapply(seq_along(chr), function(i){
+  beta_mat.chrfindBetaChr(chrom = chr[i])
+})
+betaChr_df <- do.call(rbind, betaChr_ls)
+
+# # No enough memory to load all the data points and plot the figure, so use function boxplot instead
+# ggplot(betaChr_df,
+#        aes(x = chrom, y = beta, fill = chrom)) +
+#   stat_boxplot(geom ='errorbar', width = 0.4, linetype = 1) +
+#   geom_boxplot(width = 0.4, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+#   scale_fill_grey(start=1, end=0.6) +
+#   labs(x = "chromosome type", y = "DNA methylation beta values",
+#        title = "DNA methylation level vs. chromosome type") +
+#   theme_bw()
+
+boxplot(
+  beta ~ chrom, data = betaChr_df, xlab = "chromosome type", ylab = "DNA methylation beta values",
+  main = "DNA methylations")
+```
 
 ```{R}
 betaQN <- lumiN(x.lumi = beta_mat, method = "quantile")
