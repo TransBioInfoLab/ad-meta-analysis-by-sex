@@ -342,6 +342,8 @@ ggplot(betaChrY_long,
 
 #### Boxplot of methylation by chromosomes  
 
+##### overall  
+
 ```{R}
 chrAuto <- paste0("chr", 1:22)
 betaChrAuto_ls <- lapply(seq_along(chrAuto), function(i){
@@ -377,6 +379,66 @@ pdf(file = paste0(data.dir.probes.normalization, "beta_vs_chrom.pdf"))
 boxplot(
   beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
   main = "DNA methylation on chromosomes")
+dev.off()
+```
+
+##### by gender  
+
+```{R}
+### split matrix by sex first
+beta_mat_female <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "F"]]
+beta_mat_male <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "M"]]
+
+### for females
+chrAuto <- paste0("chr", 1:22)
+female_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat_female, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
+})
+female_auto_df <- do.call(rbind, female_auto_ls)
+
+female_sex_df <- findBetaChr(data = beta_mat_female, chrom = "chrX")
+female_sex_df <- data.frame(beta = as.vector(female_sex_df), chrom = "chromosome X", stringsAsFactors = FALSE)
+
+female_df <- rbind(female_auto_df, female_sex_df)
+
+boxplot(
+  beta ~ chrom, data = female_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for females")
+
+### for males
+chrAuto <- paste0("chr", 1:22)
+male_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat_male, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
+})
+male_auto_df <- do.call(rbind, male_auto_ls)
+
+male_X_df <- findBetaChr(data = beta_mat_male, chrom = "chrX")
+male_X_df <- data.frame(beta = as.vector(male_X_df), chrom = "chromosome X", stringsAsFactors = FALSE)
+
+male_Y_df <- findBetaChr(data = beta_mat_male, chrom = "chrY")
+male_Y_df <- data.frame(beta = as.vector(male_Y_df), chrom = "chromosome Y", stringsAsFactors = FALSE)
+
+male_df <- rbind(male_auto_df, male_X_df, male_Y_df)
+
+boxplot(
+  beta ~ chrom, data = male_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for males")
+
+### save plots
+pdf(file = paste0(data.dir.probes.normalization, "beta_vs_chrom_by_gender.pdf"))
+
+boxplot(
+  beta ~ chrom, data = female_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for females")
+
+boxplot(
+  beta ~ chrom, data = male_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for males")
+
 dev.off()
 ```
 
