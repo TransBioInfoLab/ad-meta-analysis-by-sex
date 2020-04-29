@@ -306,8 +306,8 @@ ggplot(betaChrX_long,
   stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
   geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
   scale_fill_grey(start=1, end=0.6) +
-  labs(x = "chromosome type", y = "DNA methylation beta values",
-       title = "DNA methylation level vs. chromosome type on chromosome X") +
+  labs(x = "sex", y = "DNA methylation beta values",
+       title = "DNA methylation level by sex on chromosome X") +
   theme_bw() +
   theme(legend.position = "none", axis.text.x = element_blank()) +
   facet_wrap(~sex)
@@ -333,8 +333,8 @@ ggplot(betaChrY_long,
   stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
   geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
   scale_fill_grey(start=1, end=0.6) +
-  labs(x = "chromosome type", y = "DNA methylation beta values",
-       title = "DNA methylation level vs. chromosome type on chromosome Y") +
+  labs(x = "sex", y = "DNA methylation beta values",
+       title = "DNA methylation level by sex on chromosome Y") +
   theme_bw() +
   theme(legend.position = "none", axis.text.x = element_blank()) +
   facet_wrap(~sex)
