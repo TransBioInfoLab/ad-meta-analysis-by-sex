@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output:
   rmarkdown::html_document:
     theme: lumen
-    highlight: null
+    highlight: kate
     toc: true
     number_sections: true
     df_print: paged
@@ -26,6 +26,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{R, message = FALSE, results = 'hide'}
 library(dplyr)
 library(minfi)
+library(IlluminaHumanMethylation450kmanifest)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
 ```
 
 ```{R}
@@ -47,9 +49,11 @@ for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarn
 
 # Confirm sex status sing DNA methylation values
 
-```{R}
+```{R, include = FALSE, eval=TRUE}
 load(file = paste0(data.dir.raw, "Gasparoni.rda"))
+```
 
+```{R}
 # Create a MethylSet object from RGSet
 MSet <- preprocessRaw(RGSet)
 
@@ -61,7 +65,10 @@ estSex <- getSex(GMset)
 
 # Compare predicted gender with phenotype gender
 realSex <- data.frame(
-  sample = paste(phenoData$geo_accession, phenoData$sentrix_id.ch1, phenoData$sentrix_position.ch1, sep = "_"),
+  sample = paste(phenoData$geo_accession,
+                 phenoData$sentrix_id.ch1,
+                 phenoData$sentrix_position.ch1,
+                 sep = "_"),
   realSex = phenoData$Sex.ch1,
   stringsAsFactors = FALSE
 )
@@ -88,39 +95,52 @@ library(RPMM)
 #library(sesameData)
 ```
 
+```{R, include = FALSE, eval=TRUE}
+load(file = paste0(data.dir.raw, "Gasparoni.rda"))
+```
 
 ```{R}
-load(file = paste0(data.dir.raw, "Gasparoni.rda"))
-bs <- data.frame(bisulfiteConversion = bscon(RGSet))
-bsFilteredOut <- row.names(bs)[bs$bisulfiteConversion < 88]
-nb.samples <- ncol(RGSet)
-RGSet <- RGSet[,!colnames(RGSet) %in% bsFilteredOut]
-nb.samples.bc.filtered <-  ncol(RGSet)
 phenoData <- phenoData[match(substr(colnames(RGSet),1,10), phenoData$geo_accession),]
+nb.samples <- nrow(phenoData)
+nb.female.samples <- sum(phenoData$Sex.ch1 == "F")
+nb.male.samples <- sum(phenoData$Sex.ch1 == "M")
 ```
 
-```{R, eval = FALSE}
+```{R}
+bs <- data.frame(bisulfiteConversion = bscon(RGSet))
+bsFilteredOut <- row.names(bs)[bs$bisulfiteConversion < 88]
+RGSet <- RGSet[,!colnames(RGSet) %in% bsFilteredOut]
+phenoData <- phenoData[match(substr(colnames(RGSet),1,10), phenoData$geo_accession),]
+
+nb.samples.bc.filtered <- nrow(phenoData)
+nb.female.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "F")
+nb.male.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "M")
+```
+
+```{R, include = TRUE, eval=TRUE}
+ggpubr::gghistogram(bs$bisulfiteConversion,xlab = "bisulfite Conversion" )
+```
+
+```{R, eval = TRUE}
 save(RGSet,
      nb.samples,
+     nb.female.samples,
+     nb.male.samples,
      bs,
      phenoData,
-     nb.samples.bc.filtered, 
+     nb.samples.bc.filtered,
+     nb.female.samples.bc.filtered,
+     nb.male.samples.bc.filtered,
      file = paste0(data.dir.bsfilter, "/RGSet_bsfiltered.rda"))
 ```
+
+## Clinical data filtering
 
 ```{R, include = FALSE, eval = TRUE}
 load(file = paste0(data.dir.bsfilter, "/RGSet_bsfiltered.rda"))
 ```
 
-```{R, include = FALSE, eval=FALSE}
-ggpubr::gghistogram(bs$bisulfiteConversion,xlab = "bisulfite Conversion" )
-```
-
-## Clinical data filtering
-
 ```{R}
-dim(phenoData)
-
 phenoData$braak_stage.ch1 <- phenoData$braak_stage.ch1 %>% as.numeric()
 phenoData$age.ch1 <- phenoData$age.ch1 %>% as.numeric()
 ### Subset rows and columns
@@ -144,12 +164,15 @@ pheno_df <- phenoData  %>% as.data.frame() %>%
 colnames(pheno_df) <- c(
   "sample", "subject.id", "slide", "age.brain", "sex", "stage"
 )
-
-dim(pheno_df) 
 nb.samples.with.clinical <- nrow(pheno_df)
+nb.female.samples.with.clinical <- sum(pheno_df$sex == "F")
+nb.male.samples.with.clinical <- sum(pheno_df$sex == "M")
+
 ## phenotype dataset
 save(RGSet,
      nb.samples.with.clinical,
+     nb.female.samples.with.clinical,
+     nb.male.samples.with.clinical,
      pheno_df,
      file = paste0(data.dir.clinical.filter, "/gasparoni_bs_and_clinical_filtered.rda"))
 ```
@@ -165,51 +188,19 @@ Output:
 
 - beta_CG_XY_SNPfiltered.RDS
 
-
-```{R}
-##### 1. subset to probes with detection P <= 0.01 #############################
-### Read in RGSet and beta_mat
+```{R, include=FALSE, eval=TRUE}
 load(paste0(data.dir.clinical.filter, "/gasparoni_bs_and_clinical_filtered.rda"))
 ```
 
 ```{R, message = FALSE, results = 'hide'}
-### subset to probes with detection P <= 0.01
 library(minfi)
+library(DMRcate)
+library(sesame)
 ```
 
 ```{R}
-nb.probes <- nrow(RGSet)
-detP <- detectionP(RGSet, type = "m+u")
-failed.01 <- detP > 0.01
-passedProbes <- rownames(failed.01)[rowMeans(failed.01) == 0] 
-
-beta_mat <- getBeta(RGSet) 
-
-beta_mat <- beta_mat[passedProbes, ]
-nb.probes.detectP <- nrow(beta_mat)
-
-##### 2. keep only probes that start with "cg" #################################
-beta_mat <- beta_mat[grep("cg",rownames(beta_mat)),]
-dim(beta_mat) 
-nb.probes.detectP.cg <- nrow(beta_mat)
-
-##### 3. drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe ##
-```
-
-```{R, message = FALSE, warning = FALSE}
-library(DMRcate)
-beta_mat <- rmSNPandCH(
-  object = beta_mat,
-  dist = 5, 
-  mafcut = 0.01, 
-  and = TRUE,
-  rmcrosshyb = FALSE,
-  rmXY = FALSE
-) 
-nb.probes.cg.dmrcate <- nrow(beta_mat)
-
-##### 4. drop probes in chrM ###################################################
-library(sesame)
+### Find which chromosome each probe is on
+beta_mat <- beta_mat <- getBeta(RGSet)
 
 probes.info <- sesameDataGet("HM450.hg19.manifest")
 probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
@@ -217,20 +208,90 @@ probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
   dplyr::select(c("seqnames","start","end"))
 probes.info$seqnames <- as.character(probes.info$seqnames)
 
-beta_mat <- beta_mat[
-  row.names(beta_mat) %in% row.names(probes.info)[!probes.info$seqnames %in% "chrM"],
-]
-nb.probes.cg.dmrcate.chrM <- nrow(beta_mat)
+nb.probes <- nrow(probes.info)
+nb.chrAuto.probes <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes <- sum(probes.info$seqnames == "chrM")
+```
 
-##### 5. Output datasets #######################################################
+```{R}
+### subset to probes with detection P <= 0.01
+detP <- detectionP(RGSet, type = "m+u")
+failed.01 <- detP > 0.01
+passedProbes <- rownames(failed.01)[rowMeans(failed.01) == 0] 
+beta_mat <- beta_mat[passedProbes, ]
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.detectP <- nrow(probes.info)
+nb.chrAuto.probes.detectP <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.detectP <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.detectP <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.detectP <- sum(probes.info$seqnames == "chrM")
+
+### keep only probes that start with "cg"
+beta_mat <- beta_mat[grep("cg",rownames(beta_mat)),]
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.detectP.cg <- nrow(probes.info)
+nb.chrAuto.probes.detectP.cg <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.detectP.cg <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.detectP.cg <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.detectP.cg <- sum(probes.info$seqnames == "chrM")
+```
+
+```{R, message = FALSE, warning = FALSE}
+### drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe
+beta_mat <- rmSNPandCH(
+  object = beta_mat,
+  dist = 5, 
+  mafcut = 0.01, 
+  and = TRUE,
+  rmcrosshyb = FALSE,
+  rmXY = FALSE
+)
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.cg.dmrcate <- nrow(probes.info)
+nb.chrAuto.probes.cg.dmrcate <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrM")
+
+### drop probes in chrM
+probes.info <- probes.info[probes.info$seqnames != "chrM",]
+beta_mat <- beta_mat[
+  row.names(beta_mat) %in% row.names(probes.info),
+]
+
+nb.probes.dmrcate.chrM <- nrow(probes.info)
+nb.chrAuto.probes.dmrcate.chrM <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrY")
+
 save(
   pheno_df,
-  nb.probes.detectP,
-  nb.probes.detectP.cg,
-  nb.probes.cg.dmrcate,
-  nb.probes.cg.dmrcate.chrM,
   beta_mat,
-  file = paste0(data.dir.probes.qc, "beta_CG_XY_SNPfiltered_mat.rda")
+  nb.probes.detectP,
+  nb.chrAuto.probes.detectP,
+  nb.chrX.probes.detectP,
+  nb.chrY.probes.detectP,
+  nb.chrM.probes.detectP,
+  nb.probes.detectP.cg,
+  nb.chrAuto.probes.detectP.cg,
+  nb.chrX.probes.detectP.cg,
+  nb.chrY.probes.detectP.cg,
+  nb.chrM.probes.detectP.cg,
+  nb.probes.cg.dmrcate,
+  nb.chrAuto.probes.cg.dmrcate,
+  nb.chrX.probes.cg.dmrcate,
+  nb.chrY.probes.cg.dmrcate,
+  nb.chrM.probes.cg.dmrcate,
+  nb.probes.dmrcate.chrM,
+  nb.chrAuto.probes.dmrcate.chrM,
+  nb.chrX.probes.dmrcate.chrM,
+  nb.chrY.probes.dmrcate.chrM,
+  file = paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda")
 )
 ```
 
@@ -251,8 +312,8 @@ Output:
 - pheno_df.RDS
 - QNBMIQ.RDS
 
-```{R qcSamplesData}
-load(paste0(data.dir.probes.qc, "beta_CG_XY_SNPfiltered_mat.rda"))
+```{R qcSamplesData, include = FALSE, eval=TRUE}
+load(paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda"))
 ```
 
 
@@ -375,7 +436,7 @@ boxplot(
   beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
   main = "DNA methylation on chromosomes")
 
-pdf(file = paste0(data.dir.probes.normalization, "beta_vs_chrom.pdf"))
+pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom.pdf"))
 boxplot(
   beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
   main = "DNA methylation on chromosomes")
@@ -429,7 +490,7 @@ boxplot(
   main = "DNA methylation on chromosomes for males")
 
 ### save plots
-pdf(file = paste0(data.dir.probes.normalization, "beta_vs_chrom_by_gender.pdf"))
+pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom_by_gender.pdf"))
 
 boxplot(
   beta ~ chrom, data = female_df, ylab = "DNA methylation beta values",
@@ -493,7 +554,7 @@ legend('bottom',
 
 ```{R}
 pdf (
-  paste0(data.dir.probes.normalization, "boxPlotBeforeNormalization.pdf")
+  paste0(data.dir.probes.normalization, "/boxPlotBeforeNormalization.pdf")
 )
 
 matboxplot(betaChrAuto_df,
@@ -581,6 +642,57 @@ betaQN_male_Y <- lumiN(x.lumi = beta_mat_male_Y, method = "quantile")
 dim(betaQN_male_Y)
 ```
 
+##### Female plots after normalization 
+
+```{R}
+pheno_female_df <- pheno_df %>% filter(sex == "M")
+matboxplot(betaQN_female_auto,
+           groupFactor = pheno_female_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_female_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaQN_female_X,
+           groupFactor = pheno_female_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_female_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+```
+
+##### Male plots after normalization 
+
+```{R}
+pheno_male_df <- pheno_df %>% filter(sex == "M")
+matboxplot(betaQN_male_auto,
+           groupFactor = pheno_male_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaQN_male_X,
+           groupFactor = pheno_male_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaQN_male_Y,
+           groupFactor = pheno_male_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome Y) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
 ## BMIQ
 
 ```{R, message = FALSE, results = "hide"}
@@ -615,6 +727,7 @@ sm.density.compare(
 type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_auto),names(annotType))]
 table(type12)
 ```
+
 ```{R}
 set.seed(946)
 doParallel::registerDoParallel(cores = 4)
@@ -718,7 +831,7 @@ table(type12)
 
 ```{R}
 ### save plots
-pdf(paste0(data.dir.probes.normalization, "densityPlotByProbeType.pdf"))
+pdf(paste0(data.dir.probes.normalization, "/densityPlotByProbeType.pdf"))
 
 sm.density.compare(
   betaQNCompleteCol1_female_auto[,1],
@@ -755,7 +868,7 @@ dev.off()
 ### combined normalized matrices
 betaQN_BMIQ_female <- rbind(betaQN_BMIQ_female_auto, betaQN_female_X)
 betaQN_BMIQ_male <- rbind(betaQN_BMIQ_male_auto, betaQN_male_X, betaQN_male_Y)
-save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
+save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
 
 ```
 
@@ -779,12 +892,13 @@ Output:
 # plotPCA and OrderDataBySd functions
 devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
 ```
+
 ```{R}
 ### merge in group info
 ## add center and scale
 ## compare M values vs. beta values
 ## with and without center / scale
-load(paste0(data.dir.probes.normalization, "GASPARONI_QNBMIQ.rda"))
+load(paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
 ```
 
 ## for females  
@@ -831,10 +945,10 @@ d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
 d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
 d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
 
-readr::write_csv(d, paste0(data.dir.pca, "GASPARONI_PCs_usingBetas_female.csv"))
+readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_female.csv"))
 ```
 
-```{R, eval = FALSE, include = FALSE}
+```{R, eval = TRUE, include = TRUE}
 ### 2.PCA plot
 library(ggplot2)
 library(ggrepel)
@@ -869,7 +983,7 @@ betaQN_BMIQ_PCfiltered_female <- betaQN_BMIQ_female[, rownames(noOutliers)] #dim
 saveRDS(betaQN_BMIQ_PCfiltered_female, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_female.RDS"))
 
 pheno_female_df <- pheno_female_df[pheno_female_df$sample %in% rownames(noOutliers),] #dim: 29 7
-saveRDS(pheno_female_df, paste0(data.dir.pca, "pheno_female_df.RDS"))
+saveRDS(pheno_female_df, paste0(data.dir.pca, "/pheno_female_df.RDS"))
 ```
 
 ## for males  
@@ -916,10 +1030,10 @@ d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
 d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
 d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
 
-readr::write_csv(d, paste0(data.dir.pca, "GASPARONI_PCs_usingBetas_male.csv"))
+readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_male.csv"))
 ```
 
-```{R, eval = FALSE, include = FALSE}
+```{R, eval = TRUE, include = TRUE}
 ### 2.PCA plot
 library(ggplot2)
 library(ggrepel)
@@ -955,20 +1069,23 @@ betaQN_BMIQ_PCfiltered_male <- betaQN_BMIQ_male[, rownames(noOutliers)] #dim: 45
 saveRDS(betaQN_BMIQ_PCfiltered_male, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_male.RDS"))
 
 pheno_male_df <- pheno_male_df[pheno_male_df$sample %in% rownames(noOutliers),] #dim: 27 7
-saveRDS(pheno_male_df, paste0(data.dir.pca, "pheno_male_df.RDS"))
+saveRDS(pheno_male_df, paste0(data.dir.pca, "/pheno_male_df.RDS"))
 ```
 
 # Summary after QC steps
 
 ## Data and metadata
 ```{R}
-nb.samples.with.clinical.after.pca.female <- ncol(betaQN_BMIQ_PCfiltered_female)
-nb.samples.with.clinical.after.pca.male <- ncol(betaQN_BMIQ_PCfiltered_male)
+nb.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female) + ncol(betaQN_BMIQ_PCfiltered_male)
+nb.female.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female)
+nb.male.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_male)
 dim(betaQN_BMIQ_PCfiltered_female)
 dim(betaQN_BMIQ_PCfiltered_male)
 dim(pheno_female_df)
 dim(pheno_male_df)
+```
 
+```{R warning=TRUE, show = FALSE}
 pheno_female_df %>% 
   DT::datatable(filter = 'top',
                 style = "bootstrap",
@@ -1010,41 +1127,123 @@ ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20)
 ## Numbers of samples and probes removed in each step
 
 ```{R}
-df.samples <- data.frame("Number of samples" =  c(nb.samples, 
-                                                  nb.samples.bc.filtered,
-                                                  nb.samples.with.clinical, 
-                                                  nb.samples.with.clinical.after.pca.female + nb.samples.with.clinical.after.pca.male),
-                         "Description" = c("total number of samples",
-                                           "samples with bisulfate conversion > 88",
-                                           "samples with clinical data",
-                                           "Samples after PCA"),
-                         "Difference" = c("-",
-                                          nb.samples.bc.filtered - nb.samples ,
-                                          nb.samples.with.clinical - nb.samples.bc.filtered ,
-                                          nb.samples.with.clinical.after.pca.female + nb.samples.with.clinical.after.pca.male - nb.samples.with.clinical)
+df.samples <- data.frame(
+  "Number of samples" =  c(nb.samples, 
+                           nb.samples.bc.filtered,
+                           nb.samples.with.clinical, 
+                           nb.samples.pca),
+  "Description" = c("total number of samples",
+                    "samples with bisulfate conversion > 88",
+                    "samples with clinical data",
+                    "Samples after PCA"),
+  "Difference" = c("-",
+                   nb.samples.bc.filtered - nb.samples ,
+                   nb.samples.with.clinical - nb.samples.bc.filtered ,
+                   nb.samples.pca - nb.samples.with.clinical)
 )    
 df.samples           
+
+
+df.female.samples <- data.frame(
+  "Number of samples" =  c(nb.female.samples, 
+                           nb.female.samples.bc.filtered,
+                           nb.female.samples.with.clinical, 
+                           nb.female.samples.pca),
+  "Description" = c("Female total number of samples",
+                    "Female samples with bisulfate conversion > 88",
+                    "Female samples with clinical data",
+                    "Female samples after PCA"),
+  "Difference" = c("-",
+                   nb.female.samples.bc.filtered - nb.female.samples ,
+                   nb.female.samples.with.clinical - nb.female.samples.pca,
+                   nb.female.samples.pca - nb.female.samples.with.clinical)
+)    
+df.female.samples           
+
+
+df.male.samples <- data.frame(
+  "Number of samples" =  c(nb.male.samples, 
+                           nb.male.samples.bc.filtered,
+                           nb.male.samples.with.clinical, 
+                           nb.male.samples.pca),
+  "Description" = c("Male total number of samples",
+                    "Male samples with bisulfate conversion > 88",
+                    "Male samples with clinical data",
+                    "Male samples after PCA"),
+  "Difference" = c("-",
+                   nb.male.samples.bc.filtered - nb.male.samples ,
+                   nb.male.samples.with.clinical - nb.male.samples.pca ,
+                   nb.male.samples.pca - nb.male.samples.with.clinical)
+)    
+df.male.samples           
 
 # Create summary table
 df.probes <- data.frame("Number of probes" = c(nb.probes,
                                                nb.probes.detectP, 
                                                nb.probes.detectP.cg,
                                                nb.probes.cg.dmrcate,
-                                               nb.probes.cg.dmrcate.chrM),
+                                               nb.probes.dmrcate.chrM),
                         "Description" = c("total number of probes in raw data",
                                           "detection P < 0.01",
                                           "only probes that start with cg",
                                           "DMRcate",
-                                          "after deleting probes on chrM"),
+                                          "delete probes on chrM"),
                         "Difference" = c("-",
                                          nb.probes.detectP - nb.probes ,
                                          nb.probes.detectP.cg - nb.probes.detectP,
                                          nb.probes.cg.dmrcate - nb.probes.detectP.cg,
-                                         nb.probes.cg.dmrcate.chrM - nb.probes.cg.dmrcate)
+                                         nb.probes.dmrcate.chrM - nb.probes.cg.dmrcate)
 )
 df.probes
 
-save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"))
+df.chrAuto.probes <- data.frame("Number of probes" = c(nb.chrAuto.probes,
+                                                       nb.chrAuto.probes.detectP,
+                                                       nb.chrAuto.probes.detectP.cg,
+                                                       nb.chrAuto.probes.cg.dmrcate),
+                        "Description" = c("autosome total number of probes in raw data",
+                                          "autosome detection P < 0.01",
+                                          "autosome only probes that start with cg",
+                                          "autosome DMRcate"),
+                        "Difference" = c("-",
+                                         nb.chrAuto.probes.detectP - nb.chrAuto.probes ,
+                                         nb.chrAuto.probes.detectP.cg - nb.chrAuto.probes.detectP,
+                                         nb.chrAuto.probes.cg.dmrcate - nb.chrAuto.probes.detectP.cg)
+)
+df.chrAuto.probes
+
+df.chrX.probes <- data.frame("Number of probes" = c(nb.chrX.probes,
+                                                    nb.chrX.probes.detectP,
+                                                    nb.chrX.probes.detectP.cg,
+                                                    nb.chrX.probes.cg.dmrcate),
+                        "Description" = c("chromosome X total number of probes in raw data",
+                                          "chromosome X detection P < 0.01",
+                                          "chromosome X only probes that start with cg",
+                                          "chromosome X DMRcate"),
+                        "Difference" = c("-",
+                                         nb.chrX.probes.detectP - nb.chrX.probes ,
+                                         nb.chrX.probes.detectP.cg - nb.chrX.probes.detectP,
+                                         nb.chrX.probes.cg.dmrcate - nb.chrX.probes.detectP.cg)
+)
+df.chrX.probes
+
+df.chrY.probes <- data.frame("Number of probes" = c(nb.chrY.probes,
+                                                    nb.chrY.probes.detectP,
+                                                    nb.chrY.probes.detectP.cg,
+                                                    nb.chrY.probes.cg.dmrcate),
+                        "Description" = c("chromosome Y total number of probes in raw data",
+                                          "chromosome Y detection P < 0.01",
+                                          "chromosome Y only probes that start with cg",
+                                          "chromosome Y DMRcate"),
+                        "Difference" = c("-",
+                                         nb.chrY.probes.detectP - nb.chrY.probes ,
+                                         nb.chrY.probes.detectP.cg - nb.chrY.probes.detectP,
+                                         nb.chrY.probes.cg.dmrcate - nb.chrY.probes.detectP.cg)
+)
+df.chrY.probes
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(df.samples,df.probes,file = file.path(data.dir.table, "/GASPARONI_table.rda"))
 ```
 
 <!-- # Compute neuron proportion -->
@@ -1073,7 +1272,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- ##### 2. Estimate proportions of neurons in PFC samples ######################## -->
 
 <!-- ### Limit to 10,000 cpgs in the refProfile dataset -->
-<!-- pfc <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim: 433656 59 -->
+<!-- pfc <- readRDS(paste0(data.dir.pca, "/Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim: 433656 59 -->
 
 <!-- selected <- rownames(pfc) %in% rownames(refProfile) -->
 
@@ -1084,7 +1283,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- colnames(prop) <- "prop.neuron" -->
 
 <!-- ##### 3. Merge pfc.refcpgs with phenotype file ################################# -->
-<!-- pheno <- readRDS(paste0(data.dir.pca, "pheno_df.RDS")) -->
+<!-- pheno <- readRDS(paste0(data.dir.pca, "/pheno_df.RDS")) -->
 
 <!-- pheno_final <- merge( -->
 <!--   pheno, -->
@@ -1093,7 +1292,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!--   by.y = "row.names" -->
 <!-- ) -->
 
-<!-- saveRDS(pheno_final, paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) -->
+<!-- saveRDS(pheno_final, paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS")) -->
 <!-- ``` -->
 
 <!-- # Linear regression by cpgs Methylation  -->
@@ -1110,8 +1309,8 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- ## Import datasets -->
 
 <!-- ```{R} -->
-<!-- beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS"))  -->
-<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))  -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, "/Gasparoni_QNBMIQ_PCfiltered.RDS"))  -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS"))  -->
 <!-- ``` -->
 
 <!-- ## Test all cpgs -->
@@ -1167,14 +1366,14 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 
 <!-- write.csv( -->
 <!--   results_ordered_df, -->
-<!--   paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"), -->
+<!--   paste0(data.dir.single.cpg.pval, "/Gasparoni_single_cpg_pVal_df.csv"), -->
 <!--   row.names = FALSE -->
 <!-- ) -->
 <!-- ``` -->
 
 <!-- ```{R} -->
 <!-- results_ordered_df <- readr::read_csv( -->
-<!--   paste0(data.dir.single.cpg.pval, "Gasparoni_single_cpg_pVal_df.csv"), -->
+<!--   paste0(data.dir.single.cpg.pval, "/Gasparoni_single_cpg_pVal_df.csv"), -->
 <!--   col_types = readr::cols()) -->
 <!-- results_ordered_df -->
 <!-- ``` -->
@@ -1201,8 +1400,8 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 
 <!-- ```{R, eval = FALSE} -->
 <!-- ##### 1. Import datasets ####################################################### -->
-<!-- beta_mat <- readRDS(paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim:433656 59 -->
-<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) #dim:59 7 -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, "/Gasparoni_QNBMIQ_PCfiltered.RDS")) #dim:433656 59 -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS")) #dim:59 7 -->
 
 <!-- ### Compute M values -->
 <!-- mvalue_mat <- log2(beta_mat / (1 - beta_mat)) -->
@@ -1232,7 +1431,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- ### Save dataset -->
 <!-- saveRDS( -->
 <!--   resid, -->
-<!--   paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
+<!--   paste0(data.dir.residuals, "/Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
 <!-- ) -->
 <!-- ``` -->
 
@@ -1241,7 +1440,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- ```{R, eval = FALSE} -->
 <!-- ### Import datasets -->
 <!-- mvalue_residuals_mat <- readRDS( -->
-<!--   paste0(data.dir.residuals, "Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
+<!--   paste0(data.dir.residuals, "/Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
 <!-- ) -->
 
 <!-- ### Call in functions -->
@@ -1269,7 +1468,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 
 <!-- saveRDS( -->
 <!--   coMeth_ls, -->
-<!--   paste0(data.dir.residuals,"Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!--   paste0(data.dir.residuals,"/Gasparoni_residuals_cometh_input_ls.RDS") -->
 <!-- ) -->
 <!-- ``` -->
 
@@ -1295,11 +1494,11 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- ```{R, eval = FALSE} -->
 <!-- ### Import datasets -->
 <!-- beta_mat <- readRDS(paste0(data.dir.pca, -->
-<!--                            "Gasparoni_QNBMIQ_PCfiltered.RDS")) -->
-<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS")) -->
+<!--                            "/Gasparoni_QNBMIQ_PCfiltered.RDS")) -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS")) -->
 <!-- mval_mat <- log2(beta_mat / (1 - beta_mat)) %>% as.matrix() -->
 <!-- coMeth_ls <- readRDS( -->
-<!--   paste0(data.dir.residuals, "Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!--   paste0(data.dir.residuals, "/Gasparoni_residuals_cometh_input_ls.RDS") -->
 <!-- ) -->
 
 <!-- ### Create info dataset -->
@@ -1353,7 +1552,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- cohort <- "Gasparoni" -->
 <!-- info_df <- readRDS(dir(data.dir.median, pattern = "info", full.names = TRUE)) -->
 <!-- mediansMval_df <- readRDS(dir(data.dir.median, pattern = "mediansMval", full.names = TRUE)) -->
-<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "pheno_withNeuronProp_df.RDS"))  -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS"))  -->
 
 <!-- ### Check variables before fitting model -->
 <!-- pheno_df$Sample <- pheno_df$sample -->
@@ -1411,7 +1610,7 @@ save(df.samples,df.probes,file = file.path(data.dir.table, "GASPARONI_table.rda"
 <!-- dir(path = data.dir,recursive = T, pattern = ".rda|.csv|.RDS") -->
 <!-- ``` -->
 
-<!-- # Session information -->
-<!-- ```{R} -->
-<!-- devtools::session_info() -->
-<!-- ``` -->
+# Session information
+```{R}
+devtools::session_info()
+```
