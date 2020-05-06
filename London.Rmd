@@ -5,10 +5,11 @@ date: "`r Sys.Date()`"
 output:
   rmarkdown::html_document:
     theme: lumen
+    highlight: kate
     toc: true
     number_sections: true
     df_print: paged
-    code_download: false
+    code_download: true
     toc_float:
       collapsed: yes
     toc_depth: 3
@@ -17,7 +18,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
@@ -25,75 +26,37 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
 
 ```{R, message = FALSE, results = 'hide'}
 library(dplyr)
+library(minfi)
+library(IlluminaHumanMethylation450kmanifest)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
 ```
 
 ```{R}
 cohort <- "LONDON"
-data.dir <- file.path("DATASETS/",cohort,"/") 
-data.dir.table <- "DATASETS/Summary_Table/" 
-data.dir.raw <- file.path(data.dir,"/step1_download/") 
-data.dir.clinical.filter <- file.path(data.dir,"/step2_clinical_available_filtering/") 
-data.dir.probes.qc <- file.path(data.dir,"/step3_probesQC_filtering/") 
-data.dir.probes.normalization <- file.path(data.dir,"/step4_normalization/") 
-data.dir.pca <- file.path(data.dir,"/step5_pca_filtering/") 
-data.dir.neuron <- file.path(data.dir,"/step6_neuron_comp/") 
-data.dir.single.cpg.pval <- file.path(data.dir,"/step7_single_cpg_pval/") 
-data.dir.residuals <- file.path(data.dir,"/step10_residuals/") 
-data.dir.median <- file.path(data.dir,"/step11_median/") 
+data.dir <- file.path("../DATASETS",cohort) 
+data.dir.table <- "../DATASETS/Summary_Table/" 
+data.dir.raw <- "../../coMethDMR_metaAnalysis/code_validation/Meta_analysis_code/DATASETS/LONDON/step1_download/"
+data.dir.clinical.filter <- file.path(data.dir,"step2_clinical_available_filtering/") 
+data.dir.probes.qc <- file.path(data.dir,"step3_probesQC_filtering/") 
+data.dir.probes.normalization <- file.path(data.dir,"step4_normalization/") 
+data.dir.pca <- file.path(data.dir,"step5_pca_filtering/") 
+data.dir.neuron <- file.path(data.dir,"step6_neuron_comp/") 
+data.dir.single.cpg.pval <- file.path(data.dir,"step7_single_cpg_pval/") 
+data.dir.residuals <- file.path(data.dir,"step8_residuals/") 
+data.dir.median <- file.path(data.dir,"step9_median/") 
 for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarnings = FALSE)
 ```
 
-Required R library `GEOquery` can be installed as following:
+# Confirm sex status sing DNA methylation values
 
-```{R, eval = FALSE}
-if (!requireNamespace("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-
-BiocManager::install("GEOquery")
+```{R, include = FALSE, eval=TRUE}
+pheno_df <- readRDS(paste0(data.dir.raw, "GSE59685_pheno.rds"))
+beta_mat <- readRDS(paste0(data.dir.raw, "GSE59685_assay.rds"))
 ```
 
-Source: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE59685
-
-```{r synapse, eval = FALSE}
-library(GEOquery)
-test <- getGEO(GEO = "GSE59685",destdir = data.dir,GSEMatrix = TRUE,)
-GSE59685 <- test$GSE59685_series_matrix.txt.gz %>% makeSummarizedExperimentFromExpressionSet() 
-metadata <- colData(GSE59685)
-## Failed to create assayData with pacakage GEOquery, so we use the beta matrix
-## directly downloaded online instead
-library(data.table)
-assayData <- fread(
-  "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE59nnn/GSE59685/suppl/GSE59685_betas.csv.gz",
-  skip = 5,
-  header = TRUE,
-  sep =','
-)
-
-## Turn assayData from "data.table" and "data.frame" to "data.frame" only
-assayData <- data.frame(assayData)
-
-## Exclude row 1 as it's old sample id
-assayData <- assayData[-1, ]
-
-## Create row names based on V1
-row.names(assayData) <- assayData$V1
-
-## Delete column V1 after creating rownames
-assayData <- assayData[, 2:ncol(assayData)]
-
-assayData <- data.matrix(assayData)
-
-## Save RDS file
-saveRDS(assayData, paste0(data.dir.raw, "GSE59685_assay.RDS"))
-
-### Extract and save phenotype dataset
-phenoData <-  colData(GSE59685)
-phenoData <- phenoData[match(colnames(assayData),rownames(phenoData)),]
-saveRDS(phenoData, paste0(data.dir.raw, "GSE59685_pheno.RDS"))
-write.csv(phenoData, paste0(data.dir.raw, "GSE59685_pheno.csv"))
+```{r}
 ```
 
-# PFC
 ##  Data Pre-processing 
 
 Description:
