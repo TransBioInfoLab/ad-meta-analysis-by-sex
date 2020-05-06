@@ -1155,7 +1155,7 @@ df.female.samples <- data.frame(
                     "Female samples after PCA"),
   "Difference" = c("-",
                    nb.female.samples.bc.filtered - nb.female.samples ,
-                   nb.female.samples.with.clinical - nb.female.samples.pca,
+                   nb.female.samples.with.clinical - nb.female.samples.bc.filtered,
                    nb.female.samples.pca - nb.female.samples.with.clinical)
 )    
 df.female.samples           
@@ -1172,7 +1172,7 @@ df.male.samples <- data.frame(
                     "Male samples after PCA"),
   "Difference" = c("-",
                    nb.male.samples.bc.filtered - nb.male.samples ,
-                   nb.male.samples.with.clinical - nb.male.samples.pca ,
+                   nb.male.samples.with.clinical - nb.male.samples.bc.filtered ,
                    nb.male.samples.pca - nb.male.samples.with.clinical)
 )    
 df.male.samples           
