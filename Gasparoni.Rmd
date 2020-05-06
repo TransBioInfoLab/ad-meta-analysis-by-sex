@@ -47,7 +47,7 @@ data.dir.median <- file.path(data.dir,"step10_median/")
 for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarnings = FALSE)
 ```
 
-# Confirm sex status sing DNA methylation values
+# Confirm sex status
 
 ```{R, include = FALSE, eval=TRUE}
 load(file = paste0(data.dir.raw, "Gasparoni.rda"))
@@ -645,7 +645,7 @@ dim(betaQN_male_Y)
 ##### Female plots after normalization 
 
 ```{R}
-pheno_female_df <- pheno_df %>% filter(sex == "M")
+pheno_female_df <- pheno_df %>% filter(sex == "F")
 matboxplot(betaQN_female_auto,
            groupFactor = pheno_female_df$sex,
            xaxt = "n",
