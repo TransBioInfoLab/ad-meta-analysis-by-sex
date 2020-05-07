@@ -17,13 +17,13 @@ editor_options:
   chunk_output_type: inline    
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Data retrival
 
-```{R, message = FALSE, results = 'hide'}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 library(dplyr)
 library(minfi)
 library(IlluminaHumanMethylation450kmanifest)
@@ -49,11 +49,11 @@ for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarn
 
 # Confirm sex status
 
-```{R, include = FALSE, eval=TRUE}
-load(file = paste0(data.dir.raw, "Gasparoni.rda"))
+```{R, include = FALSE, eval = TRUE}
+load(file = paste0(data.dir.raw, "/Gasparoni.rda"))
 ```
 
-```{R}
+```{R, eval = FALSE}
 # Create a MethylSet object from RGSet
 MSet <- preprocessRaw(RGSet)
 
@@ -78,8 +78,6 @@ compareSex <- merge(
   by.y = "sample")
 
 identical(compareSex$predictedSex, compareSex$realSex)
-
-print(compareSex)
 ```
 
 # Data QC 
@@ -88,15 +86,13 @@ print(compareSex)
 
 Removing samples with bisulfiteConversion lower than 88.
 
-```{R qc_samples_packages, message = FALSE, results = "hide"}
+```{R, message = FALSE, warning = FALSE, results = "hide"}
 library(wateRmelon)
 library(RPMM)
-#library(sesame)
-#library(sesameData)
 ```
 
 ```{R, include = FALSE, eval=TRUE}
-load(file = paste0(data.dir.raw, "Gasparoni.rda"))
+load(file = paste0(data.dir.raw, "/Gasparoni.rda"))
 ```
 
 ```{R}
@@ -117,11 +113,11 @@ nb.female.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "F")
 nb.male.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "M")
 ```
 
-```{R, include = TRUE, eval=TRUE}
-ggpubr::gghistogram(bs$bisulfiteConversion,xlab = "bisulfite Conversion" )
+```{R, include = TRUE, warning = FALSE, eval=TRUE}
+ggpubr::gghistogram(bs$bisulfiteConversion,xlab = "bisulfite Conversion")
 ```
 
-```{R, eval = TRUE}
+```{R, eval = FALSE, include = FALSE}
 save(RGSet,
      nb.samples,
      nb.female.samples,
@@ -167,7 +163,9 @@ colnames(pheno_df) <- c(
 nb.samples.with.clinical <- nrow(pheno_df)
 nb.female.samples.with.clinical <- sum(pheno_df$sex == "F")
 nb.male.samples.with.clinical <- sum(pheno_df$sex == "M")
+```
 
+```{R, eval = FALSE, include = FALSE}
 ## phenotype dataset
 save(RGSet,
      nb.samples.with.clinical,
@@ -192,7 +190,7 @@ Output:
 load(paste0(data.dir.clinical.filter, "/gasparoni_bs_and_clinical_filtered.rda"))
 ```
 
-```{R, message = FALSE, results = 'hide'}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 library(minfi)
 library(DMRcate)
 library(sesame)
@@ -268,7 +266,9 @@ nb.probes.dmrcate.chrM <- nrow(probes.info)
 nb.chrAuto.probes.dmrcate.chrM <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
 nb.chrX.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrX")
 nb.chrY.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrY")
+```
 
+```{R, eval = FALSE, include = FALSE}
 save(
   pheno_df,
   beta_mat,
@@ -312,7 +312,7 @@ Output:
 - pheno_df.RDS
 - QNBMIQ.RDS
 
-```{R qcSamplesData, include = FALSE, eval=TRUE}
+```{R, include = FALSE, eval=TRUE}
 load(paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda"))
 ```
 
@@ -323,7 +323,7 @@ load(paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda"))
 
 #### Create function to extract separate matrix for each chromosome
 
-```{R, message = FALSE, results = 'hide'}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 library(sesame)
 library(ggplot2)
 ```
@@ -435,7 +435,9 @@ betaChr_df <- rbind(betaChrAuto_df, betaChrSex_df)
 boxplot(
   beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
   main = "DNA methylation on chromosomes")
+```
 
+```{R, include = FALSE, eval = FALSE}
 pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom.pdf"))
 boxplot(
   beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
@@ -488,7 +490,9 @@ male_df <- rbind(male_auto_df, male_X_df, male_Y_df)
 boxplot(
   beta ~ chrom, data = male_df, ylab = "DNA methylation beta values",
   main = "DNA methylation on chromosomes for males")
+```
 
+```{R, include = FALSE, eval = FALSE}
 ### save plots
 pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom_by_gender.pdf"))
 
@@ -505,7 +509,7 @@ dev.off()
 
 #### Boxplot of methylation by gender on autosomes, X, Y
 
-```{R, message = FALSE, results = 'hide'}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 library(quantro)
 ```
 
@@ -552,7 +556,7 @@ legend('bottom',
 
 ##### save plots
 
-```{R}
+```{R, include = FALSE, eval = FALSE}
 pdf (
   paste0(data.dir.probes.normalization, "/boxPlotBeforeNormalization.pdf")
 )
@@ -586,7 +590,7 @@ dev.off()
 
 ### normalization by group
 
-```{R, message = FALSE, results = 'hide'}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 library(lumi)
 ```
 
@@ -620,7 +624,7 @@ beta_mat_male_Y <- findBetaChr(data = beta_mat_male, chrom = "chrY")
 
 #### normalization 
 
-```{R}
+```{R, warning = FALSE, message = FALSE}
 ### female autosomes
 betaQN_female_auto <- lumiN(x.lumi = beta_mat_female_auto, method = "quantile")
 dim(betaQN_female_auto)
@@ -695,7 +699,7 @@ legend('bottom',
 
 ## BMIQ
 
-```{R, message = FALSE, results = "hide"}
+```{R, message = FALSE, warning = FALSE, results = "hide"}
 library(wateRmelon)
 library(RPMM)
 library(sesame)
@@ -728,7 +732,7 @@ type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_auto),names(a
 table(type12)
 ```
 
-```{R}
+```{R, eval = FALSE, warning = FALSE, message = FALSE}
 set.seed(946)
 doParallel::registerDoParallel(cores = 4)
 betaQN_BMIQ_female_auto <- plyr::aaply(
@@ -758,7 +762,8 @@ title(main = "Density plot for type I and type II probes on male autosomes")
 type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_auto),names(annotType))]
 table(type12)
 ```
-```{R}
+
+```{R, eval = FALSE, warning = FALSE, message = FALSE}
 set.seed(946)
 doParallel::registerDoParallel(cores = 4)
 betaQN_BMIQ_male_auto <- plyr::aaply(
@@ -829,7 +834,7 @@ table(type12)
 
 ### save density plots and normalized datasets
 
-```{R}
+```{R, include = FALSE, eval = FALSE}
 ### save plots
 pdf(paste0(data.dir.probes.normalization, "/densityPlotByProbeType.pdf"))
 
@@ -864,12 +869,16 @@ sm.density.compare(
 title(main = "Density plot for type I and type II probes on chromosome Y")
 
 dev.off()
+```
 
+```{R, eval = FALSE}
 ### combined normalized matrices
 betaQN_BMIQ_female <- rbind(betaQN_BMIQ_female_auto, betaQN_female_X)
 betaQN_BMIQ_male <- rbind(betaQN_BMIQ_male_auto, betaQN_male_X, betaQN_male_Y)
-save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
+```
 
+```{R, eval = FALSE, include = FALSE}
+save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
 ```
 
 # Outliers detection - PCA analysis
@@ -888,12 +897,12 @@ Output:
 - GASPARONI_QNBMIQ_PCfiltered.RDS
 - pheno_df.RDS
 
-```{R}
+```{R, warning = FALSE, message = FALSE}
 # plotPCA and OrderDataBySd functions
 devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
 ```
 
-```{R}
+```{R, include = FALSE, eval=TRUE}
 ### merge in group info
 ## add center and scale
 ## compare M values vs. beta values
@@ -944,15 +953,19 @@ d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
 
 d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
 d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
+```
 
+```{R, include = FALSE, eval = FALSE}
 readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_female.csv"))
 ```
 
-```{R, eval = TRUE, include = TRUE}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 ### 2.PCA plot
 library(ggplot2)
 library(ggrepel)
+```
 
+```{R, eval = TRUE, include = TRUE}
 ### Beata values
 byStage <- plotPCA(
   dataset = "Gasparoni: beta values",
@@ -977,13 +990,10 @@ byStage <- plotPCA(
 ```
 
 ```{R}
-### Filter samples by PCA, save files
+### Filter samples by PCA
 noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
 betaQN_BMIQ_PCfiltered_female <- betaQN_BMIQ_female[, rownames(noOutliers)] #dim: 457402 29
-saveRDS(betaQN_BMIQ_PCfiltered_female, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_female.RDS"))
-
 pheno_female_df <- pheno_female_df[pheno_female_df$sample %in% rownames(noOutliers),] #dim: 29 7
-saveRDS(pheno_female_df, paste0(data.dir.pca, "/pheno_female_df.RDS"))
 ```
 
 ## for males  
@@ -1029,15 +1039,19 @@ d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
 
 d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
 d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
+```
 
+```{R, include = FALSE, eval = FALSE}
 readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_male.csv"))
 ```
 
-```{R, eval = TRUE, include = TRUE}
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
 ### 2.PCA plot
 library(ggplot2)
 library(ggrepel)
+```
 
+```{R, eval = TRUE, include = TRUE}
 ### Beata values
 byStage <- plotPCA(
   dataset = "Gasparoni: beta values",
@@ -1063,18 +1077,14 @@ byStage <- plotPCA(
 
 
 ```{R}
-### Filter samples by PCA, save files
+### Filter samples by PCA
 noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
 betaQN_BMIQ_PCfiltered_male <- betaQN_BMIQ_male[, rownames(noOutliers)] #dim: 457464 27
-saveRDS(betaQN_BMIQ_PCfiltered_male, paste0(data.dir.pca, "Gasparoni_QNBMIQ_PCfiltered_male.RDS"))
-
 pheno_male_df <- pheno_male_df[pheno_male_df$sample %in% rownames(noOutliers),] #dim: 27 7
-saveRDS(pheno_male_df, paste0(data.dir.pca, "/pheno_male_df.RDS"))
 ```
 
-# Summary after QC steps
+## save files
 
-## Data and metadata
 ```{R}
 nb.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female) + ncol(betaQN_BMIQ_PCfiltered_male)
 nb.female.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female)
@@ -1085,7 +1095,24 @@ dim(pheno_female_df)
 dim(pheno_male_df)
 ```
 
-```{R warning=TRUE, show = FALSE}
+```{R, eval = FALSE, include = FALSE}
+save(
+  betaQN_BMIQ_PCfiltered_female,
+  betaQN_BMIQ_PCfiltered_male,
+  nb.samples.pca,
+  nb.female.samples.pca,
+  nb.male.samples.pca,
+  pheno_female_df,
+  pheno_male_df,
+  file = paste0(data.dir.pca, "/GASPARONI_QNBMIQ_PCfiltered.rda")
+)
+```
+
+# Summary after QC steps
+
+## Data and metadata
+
+```{R, warning=TRUE, show = FALSE}
 pheno_female_df %>% 
   DT::datatable(filter = 'top',
                 style = "bootstrap",
@@ -1126,7 +1153,7 @@ ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20)
 
 ## Numbers of samples and probes removed in each step
 
-```{R}
+```{R, echo = FALSE}
 df.samples <- data.frame(
   "Number of samples" =  c(nb.samples, 
                            nb.samples.bc.filtered,
@@ -1137,8 +1164,8 @@ df.samples <- data.frame(
                     "samples with clinical data",
                     "Samples after PCA"),
   "Difference" = c("-",
-                   nb.samples.bc.filtered - nb.samples ,
-                   nb.samples.with.clinical - nb.samples.bc.filtered ,
+                   nb.samples.bc.filtered - nb.samples,
+                   nb.samples.with.clinical - nb.samples.bc.filtered,
                    nb.samples.pca - nb.samples.with.clinical)
 )    
 df.samples           
@@ -1154,7 +1181,7 @@ df.female.samples <- data.frame(
                     "Female samples with clinical data",
                     "Female samples after PCA"),
   "Difference" = c("-",
-                   nb.female.samples.bc.filtered - nb.female.samples ,
+                   nb.female.samples.bc.filtered - nb.female.samples,
                    nb.female.samples.with.clinical - nb.female.samples.bc.filtered,
                    nb.female.samples.pca - nb.female.samples.with.clinical)
 )    
@@ -1171,8 +1198,8 @@ df.male.samples <- data.frame(
                     "Male samples with clinical data",
                     "Male samples after PCA"),
   "Difference" = c("-",
-                   nb.male.samples.bc.filtered - nb.male.samples ,
-                   nb.male.samples.with.clinical - nb.male.samples.bc.filtered ,
+                   nb.male.samples.bc.filtered - nb.male.samples,
+                   nb.male.samples.with.clinical - nb.male.samples.bc.filtered,
                    nb.male.samples.pca - nb.male.samples.with.clinical)
 )    
 df.male.samples           
@@ -1189,7 +1216,7 @@ df.probes <- data.frame("Number of probes" = c(nb.probes,
                                           "DMRcate",
                                           "delete probes on chrM"),
                         "Difference" = c("-",
-                                         nb.probes.detectP - nb.probes ,
+                                         nb.probes.detectP - nb.probes,
                                          nb.probes.detectP.cg - nb.probes.detectP,
                                          nb.probes.cg.dmrcate - nb.probes.detectP.cg,
                                          nb.probes.dmrcate.chrM - nb.probes.cg.dmrcate)
@@ -1205,7 +1232,7 @@ df.chrAuto.probes <- data.frame("Number of probes" = c(nb.chrAuto.probes,
                                           "autosome only probes that start with cg",
                                           "autosome DMRcate"),
                         "Difference" = c("-",
-                                         nb.chrAuto.probes.detectP - nb.chrAuto.probes ,
+                                         nb.chrAuto.probes.detectP - nb.chrAuto.probes,
                                          nb.chrAuto.probes.detectP.cg - nb.chrAuto.probes.detectP,
                                          nb.chrAuto.probes.cg.dmrcate - nb.chrAuto.probes.detectP.cg)
 )
@@ -1220,7 +1247,7 @@ df.chrX.probes <- data.frame("Number of probes" = c(nb.chrX.probes,
                                           "chromosome X only probes that start with cg",
                                           "chromosome X DMRcate"),
                         "Difference" = c("-",
-                                         nb.chrX.probes.detectP - nb.chrX.probes ,
+                                         nb.chrX.probes.detectP - nb.chrX.probes,
                                          nb.chrX.probes.detectP.cg - nb.chrX.probes.detectP,
                                          nb.chrX.probes.cg.dmrcate - nb.chrX.probes.detectP.cg)
 )
@@ -1235,7 +1262,7 @@ df.chrY.probes <- data.frame("Number of probes" = c(nb.chrY.probes,
                                           "chromosome Y only probes that start with cg",
                                           "chromosome Y DMRcate"),
                         "Difference" = c("-",
-                                         nb.chrY.probes.detectP - nb.chrY.probes ,
+                                         nb.chrY.probes.detectP - nb.chrY.probes,
                                          nb.chrY.probes.detectP.cg - nb.chrY.probes.detectP,
                                          nb.chrY.probes.cg.dmrcate - nb.chrY.probes.detectP.cg)
 )
