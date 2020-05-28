@@ -1,0 +1,2149 @@
+---
+title: "GASPARONI dataset"
+author: "Lanyu Zhang, Tiago C. Silva, Lily Wang"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    highlight: kate
+    toc: true
+    number_sections: true
+    df_print: paged
+    code_download: true
+    toc_float:
+      collapsed: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: inline    
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data retrival
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(dplyr)
+library(minfi)
+library(IlluminaHumanMethylation450kmanifest)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+
+```{R}
+cohort <- "GASPARONI"
+data.dir <- file.path("../DATASETS",cohort) 
+data.dir.table <- "../DATASETS/Summary_Table/" 
+data.dir.raw <- "../../coMethDMR_metaAnalysis/code_validation/Meta_analysis_code/DATASETS/GASPARONI/step2_read_minfi/"
+data.dir.bsfilter <- file.path(data.dir,"step2_bsConvFilter/") 
+data.dir.clinical.filter <- file.path(data.dir,"step3_clinical_available_filtering/") 
+data.dir.probes.qc <- file.path(data.dir,"step4_probesQC_filtering/") 
+data.dir.probes.normalization <- file.path(data.dir,"step5_normalization/") 
+data.dir.pca <- file.path(data.dir,"step6_pca_filtering/") 
+data.dir.neuron <- file.path(data.dir,"step7_neuron_comp/")
+data.annot <- "../../coMethDMR_metaAnalysis/DATA_annotations/"
+data.dir.single.cpg.pval <- file.path(data.dir,"step8_single_cpg_pval/") 
+data.dir.residuals <- file.path(data.dir,"step9_residuals/") 
+data.dir.median <- file.path(data.dir,"step10_median/") 
+for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarnings = FALSE)
+```
+
+# Confirm sex status
+
+```{R, eval = FALSE}
+load(file = paste0(data.dir.raw, "/Gasparoni.rda"))
+```
+
+```{R, eval = FALSE}
+# Create a MethylSet object from RGSet
+MSet <- preprocessRaw(RGSet)
+
+# Create [Genomic]MethylSet object
+GMset <- mapToGenome(MSet)
+
+# Get predicted sex status
+estSex <- getSex(GMset)
+
+# Compare predicted gender with phenotype gender
+realSex <- data.frame(
+  sample = paste(phenoData$geo_accession,
+                 phenoData$sentrix_id.ch1,
+                 phenoData$sentrix_position.ch1,
+                 sep = "_"),
+  realSex = phenoData$Sex.ch1,
+  stringsAsFactors = FALSE
+)
+compareSex <- merge(
+  as.data.frame(estSex), realSex,
+  by.x = "row.names",
+  by.y = "sample")
+
+identical(compareSex$predictedSex, compareSex$realSex)
+```
+
+# Data QC 
+
+## Bilsufite conversion filtering
+
+Removing samples with bisulfiteConversion lower than 88.
+
+```{R, message = FALSE, warning = FALSE, results = "hide"}
+library(wateRmelon)
+library(RPMM)
+```
+
+```{R, include = FALSE, eval=TRUE}
+load(file = paste0(data.dir.raw, "/Gasparoni.rda"))
+```
+
+```{R}
+phenoData <- phenoData[match(substr(colnames(RGSet),1,10), phenoData$geo_accession),]
+nb.samples <- nrow(phenoData)
+nb.female.samples <- sum(phenoData$Sex.ch1 == "F")
+nb.male.samples <- sum(phenoData$Sex.ch1 == "M")
+```
+
+```{R}
+bs <- data.frame(bisulfiteConversion = bscon(RGSet))
+bsFilteredOut <- row.names(bs)[bs$bisulfiteConversion < 88]
+RGSet <- RGSet[,!colnames(RGSet) %in% bsFilteredOut]
+phenoData <- phenoData[match(substr(colnames(RGSet),1,10), phenoData$geo_accession),]
+
+nb.samples.bc.filtered <- nrow(phenoData)
+nb.female.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "F")
+nb.male.samples.bc.filtered <- sum(phenoData$Sex.ch1 == "M")
+```
+
+```{R, include = TRUE, warning = FALSE, eval=TRUE}
+ggpubr::gghistogram(bs$bisulfiteConversion,xlab = "bisulfite Conversion")
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(RGSet,
+     nb.samples,
+     nb.female.samples,
+     nb.male.samples,
+     bs,
+     phenoData,
+     nb.samples.bc.filtered,
+     nb.female.samples.bc.filtered,
+     nb.male.samples.bc.filtered,
+     file = paste0(data.dir.bsfilter, "/RGSet_bsfiltered.rda"))
+```
+
+## Clinical data filtering
+
+```{R, include = FALSE, eval = TRUE}
+load(file = paste0(data.dir.bsfilter, "/RGSet_bsfiltered.rda"))
+```
+
+```{R}
+phenoData$braak_stage.ch1 <- phenoData$braak_stage.ch1 %>% as.numeric()
+phenoData$age.ch1 <- phenoData$age.ch1 %>% as.numeric()
+### Subset rows and columns
+pheno_df <- phenoData  %>% as.data.frame() %>%
+  dplyr::filter(
+    source_name_ch1 == "Frontal Cortex" &
+      !is.na(phenoData$braak_stage.ch1) &
+      phenoData$characteristics_ch1 == "cell type: bulk"
+  ) %>% dplyr::select(
+    c(
+      "geo_accession",
+      "donor_id.ch1",
+      "sentrix_id.ch1",
+      "age.ch1",
+      "Sex.ch1",
+      "braak_stage.ch1"
+    )
+  )
+
+### Rename vars
+colnames(pheno_df) <- c(
+  "sample", "subject.id", "slide", "age.brain", "sex", "stage"
+)
+nb.samples.with.clinical <- nrow(pheno_df)
+nb.female.samples.with.clinical <- sum(pheno_df$sex == "F")
+nb.male.samples.with.clinical <- sum(pheno_df$sex == "M")
+```
+
+```{R, eval = FALSE, include = FALSE}
+## phenotype dataset
+save(RGSet,
+     nb.samples.with.clinical,
+     nb.female.samples.with.clinical,
+     nb.male.samples.with.clinical,
+     pheno_df,
+     file = paste0(data.dir.clinical.filter, "/gasparoni_bs_and_clinical_filtered.rda"))
+```
+
+## Probes QC
+
+```{R, include=FALSE, eval=TRUE}
+load(paste0(data.dir.clinical.filter, "/gasparoni_bs_and_clinical_filtered.rda"))
+```
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(minfi)
+library(DMRcate)
+library(sesame)
+```
+
+```{R}
+### Find which chromosome each probe is on
+beta_mat <- getBeta(RGSet)
+
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+
+nb.probes <- nrow(probes.info)
+nb.chrAuto.probes <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes <- sum(probes.info$seqnames == "chrM")
+```
+
+```{R}
+### subset to probes with detection P <= 0.01
+detP <- detectionP(RGSet, type = "m+u")
+failed.01 <- detP > 0.01
+passedProbes <- rownames(failed.01)[rowMeans(failed.01) == 0] 
+beta_mat <- beta_mat[passedProbes, ]
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.detectP <- nrow(probes.info)
+nb.chrAuto.probes.detectP <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.detectP <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.detectP <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.detectP <- sum(probes.info$seqnames == "chrM")
+
+### keep only probes that start with "cg"
+beta_mat <- beta_mat[grep("cg",rownames(beta_mat)),]
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.detectP.cg <- nrow(probes.info)
+nb.chrAuto.probes.detectP.cg <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.detectP.cg <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.detectP.cg <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.detectP.cg <- sum(probes.info$seqnames == "chrM")
+```
+
+```{R, message = FALSE, warning = FALSE}
+### drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe
+beta_mat <- rmSNPandCH(
+  object = beta_mat,
+  dist = 5, 
+  mafcut = 0.01, 
+  and = TRUE,
+  rmcrosshyb = FALSE,
+  rmXY = FALSE
+)
+probes.info <- probes.info[row.names(probes.info) %in% row.names(beta_mat),]
+
+nb.probes.cg.dmrcate <- nrow(probes.info)
+nb.chrAuto.probes.cg.dmrcate <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrY")
+nb.chrM.probes.cg.dmrcate <- sum(probes.info$seqnames == "chrM")
+
+### drop probes in chrM
+probes.info <- probes.info[probes.info$seqnames != "chrM",]
+beta_mat <- beta_mat[
+  row.names(beta_mat) %in% row.names(probes.info),
+]
+
+nb.probes.dmrcate.chrM <- nrow(probes.info)
+nb.chrAuto.probes.dmrcate.chrM <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.dmrcate.chrM <- sum(probes.info$seqnames == "chrY")
+
+### drop probes in chrY
+probes.info <- probes.info[probes.info$seqnames != "chrY",]
+beta_mat <- beta_mat[
+  row.names(beta_mat) %in% row.names(probes.info),
+]
+
+nb.probes.chrM.chrY <- nrow(probes.info)
+nb.chrAuto.probes.chrM.chrY <- sum(probes.info$seqnames %in% paste0("chr", 1:22))
+nb.chrX.probes.chrM.chrY <- sum(probes.info$seqnames == "chrX")
+nb.chrY.probes.chrM.chrY <- sum(probes.info$seqnames == "chrY")
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(
+  pheno_df,
+  beta_mat,
+  nb.probes,
+  nb.chrAuto.probes,
+  nb.chrX.probes,
+  nb.chrY.probes,
+  nb.chrM.probes,
+  nb.probes.detectP,
+  nb.chrAuto.probes.detectP,
+  nb.chrX.probes.detectP,
+  nb.chrY.probes.detectP,
+  nb.chrM.probes.detectP,
+  nb.probes.detectP.cg,
+  nb.chrAuto.probes.detectP.cg,
+  nb.chrX.probes.detectP.cg,
+  nb.chrY.probes.detectP.cg,
+  nb.chrM.probes.detectP.cg,
+  nb.probes.cg.dmrcate,
+  nb.chrAuto.probes.cg.dmrcate,
+  nb.chrX.probes.cg.dmrcate,
+  nb.chrY.probes.cg.dmrcate,
+  nb.chrM.probes.cg.dmrcate,
+  nb.probes.dmrcate.chrM,
+  nb.chrAuto.probes.dmrcate.chrM,
+  nb.chrX.probes.dmrcate.chrM,
+  nb.chrY.probes.dmrcate.chrM,
+  nb.probes.chrM.chrY,
+  nb.chrAuto.probes.chrM.chrY,
+  nb.chrX.probes.chrM.chrY,
+  nb.chrY.probes.chrM.chrY,
+  file = paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda")
+)
+```
+
+# Normalization
+
+```{R, include = FALSE, eval=TRUE}
+load(paste0(data.dir.probes.qc, "/beta_CG_XY_SNPfiltered_mat.rda"))
+```
+
+
+## Quantile normalization
+
+### Check if sex chrom have higher/lower intensities than autosomes
+
+#### Create function to extract separate matrix for each chromosome
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(sesame)
+library(ggplot2)
+```
+
+```{R}
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+
+findBetaChr <- function(data, chrom){
+  data %>%
+    as.data.frame() %>% # has to turn matrix into df for next step
+    tibble::rownames_to_column() %>% # turn rownames to a column, so rownames won't be deleted after filtering rows in next step
+    filter(rowname %in% row.names(probes.info[probes.info$seqnames == chrom,])) %>%
+    tibble::column_to_rownames() %>%
+    as.matrix()
+}
+```
+
+#### Compare beta values between gender
+
+##### on chrX
+
+```{R}
+betaChrX <- findBetaChr(data = beta_mat, chrom = "chrX")
+betaChrX_long <- data.frame(
+  beta = as.vector(betaChrX),
+  sample = rep(substr(colnames(betaChrX), 1,10), each = nrow(betaChrX)),
+  stringsAsFactors = FALSE
+)
+betaChrX_long <- merge(
+  betaChrX_long, pheno_df[, c("sample", "sex")],
+  by = "sample",
+  sort = FALSE
+)
+  
+ggplot(betaChrX_long,
+       aes(x = sample, y = beta, fill = sex)) +
+  stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
+  geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+  scale_fill_grey(start=1, end=0.6) +
+  labs(x = "sex", y = "DNA methylation beta values",
+       title = "DNA methylation level by sex on chromosome X") +
+  theme_bw() +
+  theme(legend.position = "none", axis.text.x = element_blank()) +
+  facet_wrap(~sex)
+```
+
+##### on chrY
+
+```{R}
+# betaChrY <- findBetaChr(data = beta_mat, chrom = "chrY")
+# betaChrY_long <- data.frame(
+#   beta = as.vector(betaChrY),
+#   sample = rep(substr(colnames(betaChrY), 1,10), each = nrow(betaChrY)),
+#   stringsAsFactors = FALSE
+# )
+# betaChrY_long <- merge(
+#   betaChrY_long, pheno_df[, c("sample", "sex")],
+#   by = "sample",
+#   sort = FALSE
+# )
+# 
+# ggplot(betaChrY_long,
+#        aes(x = sample, y = beta, fill = sex)) +
+#   stat_boxplot(geom ='errorbar', width = 1, linetype = 1) +
+#   geom_boxplot(width = 1, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+#   scale_fill_grey(start=1, end=0.6) +
+#   labs(x = "sex", y = "DNA methylation beta values",
+#        title = "DNA methylation level by sex on chromosome Y") +
+#   theme_bw() +
+#   theme(legend.position = "none", axis.text.x = element_blank()) +
+#   facet_wrap(~sex)
+```
+
+#### Boxplot of methylation by chromosomes  
+
+##### overall  
+
+```{R}
+chrAuto <- paste0("chr", 1:22)
+betaChrAuto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
+})
+betaChrAuto_df <- do.call(rbind, betaChrAuto_ls)
+
+# chrSex <- paste0("chr", c("X", "Y"))
+chrSex <- "chrX"
+betaChrSex_ls <- lapply(seq_along(chrSex), function(i){
+  dat <- findBetaChr(data = beta_mat, chrom = chrSex[i])
+  data.frame(beta = as.vector(dat), chrom = chrSex[i], stringsAsFactors = FALSE)
+})
+betaChrSex_df <- do.call(rbind, betaChrSex_ls)
+
+betaChr_df <- rbind(betaChrAuto_df, betaChrSex_df)
+
+# # No enough memory to load all the data points and plot the figure, so use function boxplot instead
+# ggplot(betaChr_df,
+#        aes(x = chrom, y = beta, fill = chrom)) +
+#   stat_boxplot(geom ='errorbar', width = 0.4, linetype = 1) +
+#   geom_boxplot(width = 0.4, alpha = 1, outlier.shape = 1, outlier.size = 2) +
+#   scale_fill_grey(start=1, end=0.6) +
+#   labs(x = "chromosome type", y = "DNA methylation beta values",
+#        title = "DNA methylation level vs. chromosome type") +
+#   theme_bw()
+
+boxplot(
+  beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes")
+```
+
+```{R, include = FALSE, eval = FALSE}
+pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom.pdf"))
+boxplot(
+  beta ~ chrom, data = betaChr_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes")
+dev.off()
+```
+
+##### by gender  
+
+```{R}
+### split matrix by sex first
+beta_mat_female <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "F"]]
+beta_mat_male <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "M"]]
+
+### for females
+chrAuto <- paste0("chr", 1:22)
+female_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat_female, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
+})
+female_auto_df <- do.call(rbind, female_auto_ls)
+
+female_sex_df <- findBetaChr(data = beta_mat_female, chrom = "chrX")
+female_sex_df <- data.frame(beta = as.vector(female_sex_df), chrom = "chromosome X", stringsAsFactors = FALSE)
+
+female_df <- rbind(female_auto_df, female_sex_df)
+
+boxplot(
+  beta ~ chrom, data = female_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for females")
+
+### for males
+chrAuto <- paste0("chr", 1:22)
+male_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  dat <- findBetaChr(data = beta_mat_male, chrom = chrAuto[i])
+  data.frame(beta = as.vector(dat), chrom = "autosomes", stringsAsFactors = FALSE)
+})
+male_auto_df <- do.call(rbind, male_auto_ls)
+
+male_X_df <- findBetaChr(data = beta_mat_male, chrom = "chrX")
+male_X_df <- data.frame(beta = as.vector(male_X_df), chrom = "chromosome X", stringsAsFactors = FALSE)
+
+# male_Y_df <- findBetaChr(data = beta_mat_male, chrom = "chrY")
+# male_Y_df <- data.frame(beta = as.vector(male_Y_df), chrom = "chromosome Y", stringsAsFactors = FALSE)
+
+# male_df <- rbind(male_auto_df, male_X_df, male_Y_df)
+male_df <- rbind(male_auto_df, male_X_df)
+
+boxplot(
+  beta ~ chrom, data = male_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for males")
+```
+
+```{R, include = FALSE, eval = FALSE}
+### save plots
+pdf(file = paste0(data.dir.probes.normalization, "/beta_vs_chrom_by_gender.pdf"))
+
+boxplot(
+  beta ~ chrom, data = female_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for females")
+
+boxplot(
+  beta ~ chrom, data = male_df, ylab = "DNA methylation beta values",
+  main = "DNA methylation on chromosomes for males")
+
+dev.off()
+```
+
+#### Boxplot of methylation by gender on autosomes, X, Y
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(quantro)
+```
+
+##### on autosomes
+
+```{R}
+chrAuto <- paste0("chr", 1:22)
+betaChrAuto_ls <- lapply(seq_along(chrAuto), function(i){findBetaChr(data = beta_mat, chrom = chrAuto[i])})
+betaChrAuto_df <- do.call(rbind, betaChrAuto_ls)
+matboxplot(betaChrAuto_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### on chrX 
+
+```{R}
+betaChrX_df <- findBetaChr(data = beta_mat, chrom = "chrX")
+matboxplot(betaChrX_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### on chrY
+
+```{R}
+# betaChrY_df <- findBetaChr(data = beta_mat,chrom = "chrY")
+# matboxplot(betaChrY_df,
+#            groupFactor = pheno_df$sex,
+#            xaxt = "n",
+#            main = "Beta Values (chromosome Y) - before normalization")
+# legend('bottom',
+#        paste0("sex ", levels(as.factor(pheno_df$sex))),
+#        col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+##### save plots
+
+```{R, include = FALSE, eval = FALSE}
+pdf (
+  paste0(data.dir.probes.normalization, "/boxPlotBeforeNormalization.pdf")
+)
+
+matboxplot(betaChrAuto_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaChrX_df,
+           groupFactor = pheno_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - before normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+# matboxplot(betaChrY_df,
+#            groupFactor = pheno_df$sex,
+#            xaxt = "n",
+#            main = "Beta Values (chromosome Y) - before normalization")
+# legend('bottom',
+#        paste0("sex ", levels(as.factor(pheno_df$sex))),
+#        col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+dev.off()
+```
+
+### normalization by group
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(lumi)
+```
+
+#### split beta_mat into sub-matrics by females autosomes, females X, males autosomes, males X, males Y
+
+```{R}
+### split matrix by sex first
+beta_mat_female <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "F"]]
+beta_mat_male <- beta_mat[ 
+  ,substr(colnames(beta_mat), 1, 10) %in% pheno_df$sample[pheno_df$sex == "M"]]
+
+### split female beta matrix by chromosome (auto, X)
+chrAuto <- paste0("chr", 1:22)
+beta_mat_female_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  findBetaChr(data = beta_mat_female, chrom = chrAuto[i])})
+beta_mat_female_auto <- do.call(rbind, beta_mat_female_auto_ls)
+
+beta_mat_female_X <- findBetaChr(data = beta_mat_female, chrom = "chrX")
+
+### split male beta matrix by chromosome (auto, X, Y)
+chrAuto <- paste0("chr", 1:22)
+beta_mat_male_auto_ls <- lapply(seq_along(chrAuto), function(i){
+  findBetaChr(data = beta_mat_male, chrom = chrAuto[i])})
+beta_mat_male_auto <- do.call(rbind, beta_mat_male_auto_ls)
+
+beta_mat_male_X <- findBetaChr(data = beta_mat_male, chrom = "chrX")
+
+# beta_mat_male_Y <- findBetaChr(data = beta_mat_male, chrom = "chrY")
+```
+
+#### normalization 
+
+```{R, warning = FALSE, message = FALSE}
+### female autosomes
+betaQN_female_auto <- lumiN(x.lumi = beta_mat_female_auto, method = "quantile")
+dim(betaQN_female_auto)
+
+### female chromosome X
+betaQN_female_X <- lumiN(x.lumi = beta_mat_female_X, method = "quantile")
+dim(betaQN_female_X)
+
+### male autosomes
+betaQN_male_auto <- lumiN(x.lumi = beta_mat_male_auto, method = "quantile")
+dim(betaQN_male_auto)
+
+### male chromosome X
+betaQN_male_X <- lumiN(x.lumi = beta_mat_male_X, method = "quantile")
+dim(betaQN_male_X)
+
+### male chromosome Y
+# betaQN_male_Y <- lumiN(x.lumi = beta_mat_male_Y, method = "quantile")
+# dim(betaQN_male_Y)
+```
+
+##### Female plots after normalization 
+
+```{R}
+pheno_female_df <- pheno_df %>% filter(sex == "F")
+matboxplot(betaQN_female_auto,
+           groupFactor = pheno_female_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_female_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaQN_female_X,
+           groupFactor = pheno_female_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_female_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+```
+
+##### Male plots after normalization 
+
+```{R}
+pheno_male_df <- pheno_df %>% filter(sex == "M")
+matboxplot(betaQN_male_auto,
+           groupFactor = pheno_male_df$sex,
+           xaxt = "n",
+           main = "Beta Values (autosomes) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+matboxplot(betaQN_male_X,
+           groupFactor = pheno_male_df$sex,
+           xaxt = "n",
+           main = "Beta Values (chromosome X) - after normalization")
+legend('bottom',
+       paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+       col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+
+# matboxplot(betaQN_male_Y,
+#            groupFactor = pheno_male_df$sex,
+#            xaxt = "n",
+#            main = "Beta Values (chromosome Y) - after normalization")
+# legend('bottom',
+#        paste0("sex ", levels(as.factor(pheno_male_df$sex))),
+#        col = c(1:7), lty = 1, lwd = 3, cex = 0.70)
+```
+
+## BMIQ
+
+```{R, message = FALSE, warning = FALSE, results = "hide"}
+library(wateRmelon)
+library(RPMM)
+library(sesame)
+library(sesameData)
+library(sm)
+```
+
+### test percentage of type I and type II probes then normalize the matrix
+
+#### on autosomes
+
+##### for females
+
+```{R}
+### Order annotation in the same order as beta matrix
+annotType <- sesameDataGet("HM450.hg19.manifest")
+annotType$designTypeNumeric <- ifelse(annotType$designType == "I",1,2)
+
+### Density plot for type I and type II probes
+betaQNCompleteCol1_female_auto <- betaQN_female_auto[complete.cases(betaQN_female_auto[,1]), ]
+annotTypeCompleteCol1_female_auto <- annotType[row.names(betaQNCompleteCol1_female_auto), ]
+
+sm.density.compare(
+    betaQNCompleteCol1_female_auto[,1],
+    annotTypeCompleteCol1_female_auto$designTypeNumeric) +
+  title(main = "Density plot for type I and type II probes on female autosomes")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_auto),names(annotType))]
+table(type12)
+```
+
+```{R, eval = FALSE, warning = FALSE, message = FALSE}
+set.seed(946)
+doParallel::registerDoParallel(cores = 4)
+betaQN_BMIQ_female_auto <- plyr::aaply(
+  betaQN_female_auto, 2,
+  function(x){
+    norm_ls <- BMIQ(x, design.v = type12, plots = FALSE)
+    return (norm_ls$nbeta)
+  },.progress = "time",.parallel = TRUE
+) %>% t()
+colnames(betaQN_BMIQ_female_auto) <- colnames(betaQN_female_auto)
+```
+
+##### for males
+
+```{R}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_male_auto <- betaQN_male_auto[complete.cases(betaQN_male_auto[,1]), ]
+annotTypeCompleteCol1_male_auto <- annotType[row.names(betaQNCompleteCol1_male_auto), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_male_auto[,1],
+  annotTypeCompleteCol1_male_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male autosomes")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_auto),names(annotType))]
+table(type12)
+```
+
+```{R, eval = FALSE, warning = FALSE, message = FALSE}
+set.seed(946)
+doParallel::registerDoParallel(cores = 4)
+betaQN_BMIQ_male_auto <- plyr::aaply(
+  betaQN_male_auto, 2,
+  function(x){
+    norm_ls <- BMIQ(x, design.v = type12, plots = FALSE)
+    return (norm_ls$nbeta)
+  },.progress = "time",.parallel = TRUE
+) %>% t()
+colnames(betaQN_BMIQ_male_auto) <- colnames(betaQN_male_auto)
+```
+
+#### on chromosome X
+
+##### for females
+
+```{R}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_female_X <- betaQN_female_X[complete.cases(betaQN_female_X[,1]), ]
+annotTypeCompleteCol1_female_X <- annotType[row.names(betaQNCompleteCol1_female_X), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_female_X[,1],
+  annotTypeCompleteCol1_female_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female chromosome X")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_female_X),names(annotType))]
+table(type12)
+```
+
+##### for males
+
+```{R}
+### Density plot for type I and type II probes
+betaQNCompleteCol1_male_X <- betaQN_male_X[complete.cases(betaQN_male_X[,1]), ]
+annotTypeCompleteCol1_male_X <- annotType[row.names(betaQNCompleteCol1_male_X), ]
+
+sm.density.compare(
+  betaQNCompleteCol1_male_X[,1],
+  annotTypeCompleteCol1_male_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male chromosome X")
+
+### Summary table
+type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_X),names(annotType))]
+table(type12)
+```
+
+#### on chromosome Y
+
+```{R}
+# ### Density plot for type I and type II probes
+# betaQNCompleteCol1_male_Y <- betaQN_male_Y[complete.cases(betaQN_male_Y[,1]), ]
+# annotTypeCompleteCol1_male_Y <- annotType[row.names(betaQNCompleteCol1_male_Y), ]
+# 
+# sm.density.compare(
+#   betaQNCompleteCol1_male_Y[,1],
+#   annotTypeCompleteCol1_male_Y$designTypeNumeric
+# )
+# title(main = "Density plot for type I and type II probes on chromosome Y")
+# 
+# ### Summary table
+# type12 <- annotType$designTypeNumeric[match(rownames(betaQN_male_Y),names(annotType))]
+# table(type12)
+```
+
+### save density plots and normalized datasets
+
+```{R, include = FALSE, eval = FALSE}
+### save plots
+pdf(paste0(data.dir.probes.normalization, "/densityPlotByProbeType.pdf"))
+
+sm.density.compare(
+  betaQNCompleteCol1_female_auto[,1],
+  annotTypeCompleteCol1_female_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female autosomes")
+
+sm.density.compare(
+  betaQNCompleteCol1_male_auto[,1],
+  annotTypeCompleteCol1_male_auto$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male autosomes")
+
+sm.density.compare(
+  betaQNCompleteCol1_female_X[,1],
+  annotTypeCompleteCol1_female_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on female chromosome X")
+
+sm.density.compare(
+  betaQNCompleteCol1_male_X[,1],
+  annotTypeCompleteCol1_male_X$designTypeNumeric
+)
+title(main = "Density plot for type I and type II probes on male chromosome X")
+
+# sm.density.compare(
+#   betaQNCompleteCol1_male_Y[,1],
+#   annotTypeCompleteCol1_male_Y$designTypeNumeric
+# )
+# title(main = "Density plot for type I and type II probes on chromosome Y")
+
+dev.off()
+```
+
+```{R, eval = FALSE}
+### combined normalized matrices
+betaQN_BMIQ_female <- rbind(betaQN_BMIQ_female_auto, betaQN_female_X)
+betaQN_BMIQ_male <- rbind(betaQN_BMIQ_male_auto, betaQN_male_X)
+# betaQN_BMIQ_male <- rbind(betaQN_BMIQ_male_auto, betaQN_male_X, betaQN_male_Y)
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(betaQN_BMIQ_female, betaQN_BMIQ_male, pheno_df, file = paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
+```
+
+# Outliers detection - PCA analysis
+
+```{R, warning = FALSE, message = FALSE}
+# plotPCA and OrderDataBySd functions
+devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
+```
+
+```{R, include = FALSE, eval=TRUE}
+### merge in group info
+## add center and scale
+## compare M values vs. beta values
+## with and without center / scale
+load(paste0(data.dir.probes.normalization, "/GASPARONI_QNBMIQ.rda"))
+```
+
+## for females  
+
+```{R}
+pheno_female_df <- pheno_df %>% filter(sex == "F")
+pheno_female_df$stage3 <- ifelse(
+  pheno_female_df$stage %in% c(0,1,2), "0-2",
+  ifelse(pheno_female_df$stage %in% c(3,4), "3-4", "5-6")
+)
+betaQN_BMIQ_female <- betaQN_BMIQ_female[ , pheno_female_df$sample]
+
+### transform to m values
+mvalue_mat <- log2(betaQN_BMIQ_female / (1 - betaQN_BMIQ_female)) #dim: 457402 30
+
+### order matrix by most variable probes on top
+betaOrd_mat <- OrderDataBySd(betaQN_BMIQ_female) #dim: 457402 30
+mOrd_mat <- OrderDataBySd(mvalue_mat)  #dim: 457402 30
+
+identical(pheno_female_df$sample, colnames(betaOrd_mat))
+identical(pheno_female_df$sample, colnames(mOrd_mat))
+
+pca <- prcomp(t(betaOrd_mat[1:50000, ]),
+              center = TRUE,
+              scale = TRUE)
+
+d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2])
+
+meanPC1 <- mean (d$PC1)
+sdPC1   <- sd (d$PC1)
+
+meanPC2 <- mean (d$PC2)
+sdPC2   <- sd (d$PC2)
+
+out3sdPC1_1 <- meanPC1 - 3 * sdPC1
+out3sdPC1_2 <- meanPC1 + 3 * sdPC1
+
+out3sdPC2_1 <- meanPC2 - 3 * sdPC2
+out3sdPC2_2 <- meanPC2 + 3 * sdPC2
+
+d$outlier_PC1[d$PC1 >= out3sdPC1_1 & d$PC1 <= out3sdPC1_2] <- 0
+d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
+
+d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
+d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
+```
+
+```{R, include = FALSE, eval = FALSE}
+readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_female.csv"))
+```
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+### 2.PCA plot
+library(ggplot2)
+library(ggrepel)
+```
+
+```{R, eval = TRUE, include = TRUE}
+### Beata values
+byStage <- plotPCA(
+  dataset = "Gasparoni: beta values",
+  expSorted_mat = betaOrd_mat,
+  pheno = pheno_female_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+
+### M values
+byStage <- plotPCA(
+  dataset = "Gasparoni: M values",
+  expSorted_mat = mOrd_mat,
+  pheno = pheno_female_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+```
+
+```{R}
+### Filter samples by PCA
+noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
+betaQN_BMIQ_PCfiltered_female <- betaQN_BMIQ_female[, rownames(noOutliers)] #dim: 457402 29
+pheno_female_df <- pheno_female_df[pheno_female_df$sample %in% rownames(noOutliers),] #dim: 29 7
+```
+
+## for males  
+
+```{R}
+pheno_male_df <- pheno_df %>% filter(sex == "M")
+pheno_male_df$stage3 <- ifelse(
+  pheno_male_df$stage %in% c(0,1,2), "0-2",
+  ifelse(pheno_male_df$stage %in% c(3,4), "3-4", "5-6")
+)
+betaQN_BMIQ_male <- betaQN_BMIQ_male[ , pheno_male_df$sample]
+
+### transform to m values
+mvalue_mat <- log2(betaQN_BMIQ_male / (1 - betaQN_BMIQ_male)) #dim: 457464 27
+
+### order matrix by most variable probes on top
+betaOrd_mat <- OrderDataBySd(betaQN_BMIQ_male) #dim: 457464 27
+mOrd_mat <- OrderDataBySd(mvalue_mat)  #dim: 457464 27
+
+identical(pheno_male_df$sample, colnames(betaOrd_mat))
+identical(pheno_male_df$sample, colnames(mOrd_mat))
+
+pca <- prcomp(t(betaOrd_mat[1:50000, ]),
+              center = TRUE,
+              scale = TRUE)
+
+d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2])
+
+meanPC1 <- mean (d$PC1)
+sdPC1   <- sd (d$PC1)
+
+meanPC2 <- mean (d$PC2)
+sdPC2   <- sd (d$PC2)
+
+out3sdPC1_1 <- meanPC1 - 3 * sdPC1
+out3sdPC1_2 <- meanPC1 + 3 * sdPC1
+
+out3sdPC2_1 <- meanPC2 - 3 * sdPC2
+out3sdPC2_2 <- meanPC2 + 3 * sdPC2
+
+d$outlier_PC1[d$PC1 >= out3sdPC1_1 & d$PC1 <= out3sdPC1_2] <- 0
+d$outlier_PC1[d$PC1 < out3sdPC1_1 | d$PC1 > out3sdPC1_2] <- 1
+
+d$outlier_PC2[d$PC2 >= out3sdPC2_1 & d$PC2 <= out3sdPC2_2] <- 0
+d$outlier_PC2[d$PC2 < out3sdPC2_1 | d$PC2 > out3sdPC2_2] <- 1
+```
+
+```{R, include = FALSE, eval = FALSE}
+readr::write_csv(d, paste0(data.dir.pca, "/GASPARONI_PCs_usingBetas_male.csv"))
+```
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+### 2.PCA plot
+library(ggplot2)
+library(ggrepel)
+```
+
+```{R, eval = TRUE, include = TRUE}
+### Beata values
+byStage <- plotPCA(
+  dataset = "Gasparoni: beta values",
+  expSorted_mat = betaOrd_mat,
+  pheno = pheno_male_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+
+### M values
+byStage <- plotPCA(
+  dataset = "Gasparoni: M values",
+  expSorted_mat = mOrd_mat,
+  pheno = pheno_male_df,
+  group_char = "stage3",
+  ntop = 50000,
+  center = TRUE,
+  scale = TRUE
+)
+```
+
+
+```{R}
+### Filter samples by PCA
+noOutliers <- d[which(d$outlier_PC1 == 0 & d$outlier_PC2 == 0), ]
+betaQN_BMIQ_PCfiltered_male <- betaQN_BMIQ_male[, rownames(noOutliers)] #dim: 457464 27
+pheno_male_df <- pheno_male_df[pheno_male_df$sample %in% rownames(noOutliers),] #dim: 27 7
+```
+
+```{R}
+nb.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female) + ncol(betaQN_BMIQ_PCfiltered_male)
+nb.female.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_female)
+nb.male.samples.pca <- ncol(betaQN_BMIQ_PCfiltered_male)
+dim(betaQN_BMIQ_PCfiltered_female)
+dim(betaQN_BMIQ_PCfiltered_male)
+dim(pheno_female_df)
+dim(pheno_male_df)
+```
+
+```{R}
+library(sesame)
+```
+
+```{R}
+### Find which chromosome each probe is on
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(betaQN_BMIQ_PCfiltered_male) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+probes.info.chrY <- row.names(probes.info)[probes.info$seqnames == "chrY"]
+
+betaQN_BMIQ_PCfiltered_male_noChrY <- betaQN_BMIQ_PCfiltered_male[
+  !(row.names(betaQN_BMIQ_PCfiltered_male) %in% probes.info.chrY),
+]
+
+### combine betaQN_BMIQ_PCfiltered_female and betaQN_BMIQ_PCfiltered_male_noChrY
+betaQN_BMIQ_PCfiltered <- cbind(
+  betaQN_BMIQ_PCfiltered_female, betaQN_BMIQ_PCfiltered_male_noChrY
+)
+
+### combine pheno_female_df and pheno_male_df
+pheno_df <- rbind(pheno_female_df, pheno_male_df)
+
+# identical(colnames(betaQN_BMIQ_PCfiltered), pheno_df$sample)
+```
+
+## save files
+
+```{R, eval = FALSE, include = FALSE}
+save(
+  betaQN_BMIQ_PCfiltered,
+  betaQN_BMIQ_PCfiltered_female,
+  betaQN_BMIQ_PCfiltered_male,
+  nb.samples.pca,
+  nb.female.samples.pca,
+  nb.male.samples.pca,
+  pheno_df,
+  pheno_female_df,
+  pheno_male_df,
+  file = paste0(data.dir.pca, "/GASPARONI_QNBMIQ_PCfiltered.rda")
+)
+```
+
+# Summary after QC steps
+
+## Data and metadata
+
+```{R, warning=TRUE, show = FALSE}
+pheno_female_df %>% 
+  DT::datatable(filter = 'top',
+                style = "bootstrap",
+                extensions = 'Buttons',
+                options = list(scrollX = TRUE, 
+                               dom = 'Bfrtip',
+                               buttons = I('colvis'),
+                               keys = TRUE, 
+                               pageLength = 10), 
+                rownames = FALSE,
+                caption = "Female samples metadata")
+
+pheno_male_df %>% 
+  DT::datatable(filter = 'top',
+                style = "bootstrap",
+                extensions = 'Buttons',
+                options = list(scrollX = TRUE, 
+                               dom = 'Bfrtip',
+                               buttons = I('colvis'),
+                               keys = TRUE, 
+                               pageLength = 10), 
+                rownames = FALSE,
+                caption = "Male samples metadata")
+```
+
+```{R, eval = FALSE, include = FALSE}
+ggpubr::gghistogram(data = pheno_female_df, x = "stage",bins = 8)
+# ggpubr::gghistogram(data = pheno_female_df, x = "stage",bins = 8,facet.by = "sex",fill = "sex")
+ggpubr::gghistogram(data = pheno_female_df, x = "age.brain",bins = 20)
+# ggpubr::gghistogram(data = pheno_female_df, x = "age.brain",bins = 20,fill = "sex",facet.by = "sex")
+
+ggpubr::gghistogram(data = pheno_male_df, x = "stage",bins = 8)
+# ggpubr::gghistogram(data = pheno_male_df, x = "stage",bins = 8,facet.by = "sex",fill = "sex")
+ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20)
+# ggpubr::gghistogram(data = pheno_male_df, x = "age.brain",bins = 20,fill = "sex",facet.by = "sex")
+```
+
+
+## Numbers of samples and probes removed in each step
+
+```{R, echo = FALSE}
+df.samples <- data.frame(
+  "Number of samples" =  c(nb.samples, 
+                           nb.samples.bc.filtered,
+                           nb.samples.with.clinical, 
+                           nb.samples.pca),
+  "Description" = c("total number of samples",
+                    "samples with bisulfate conversion > 88",
+                    "samples with clinical data",
+                    "Samples after PCA"),
+  "Difference" = c("-",
+                   nb.samples.bc.filtered - nb.samples,
+                   nb.samples.with.clinical - nb.samples.bc.filtered,
+                   nb.samples.pca - nb.samples.with.clinical)
+)    
+df.samples           
+
+
+df.female.samples <- data.frame(
+  "Number of samples" =  c(nb.female.samples, 
+                           nb.female.samples.bc.filtered,
+                           nb.female.samples.with.clinical, 
+                           nb.female.samples.pca),
+  "Description" = c("Female total number of samples",
+                    "Female samples with bisulfate conversion > 88",
+                    "Female samples with clinical data",
+                    "Female samples after PCA"),
+  "Difference" = c("-",
+                   nb.female.samples.bc.filtered - nb.female.samples,
+                   nb.female.samples.with.clinical - nb.female.samples.bc.filtered,
+                   nb.female.samples.pca - nb.female.samples.with.clinical)
+)    
+df.female.samples           
+
+
+df.male.samples <- data.frame(
+  "Number of samples" =  c(nb.male.samples, 
+                           nb.male.samples.bc.filtered,
+                           nb.male.samples.with.clinical, 
+                           nb.male.samples.pca),
+  "Description" = c("Male total number of samples",
+                    "Male samples with bisulfate conversion > 88",
+                    "Male samples with clinical data",
+                    "Male samples after PCA"),
+  "Difference" = c("-",
+                   nb.male.samples.bc.filtered - nb.male.samples,
+                   nb.male.samples.with.clinical - nb.male.samples.bc.filtered,
+                   nb.male.samples.pca - nb.male.samples.with.clinical)
+)    
+df.male.samples           
+
+# Create summary table
+df.probes <- data.frame("Number of probes" = c(nb.probes,
+                                               nb.probes.detectP, 
+                                               nb.probes.detectP.cg,
+                                               nb.probes.cg.dmrcate,
+                                               nb.probes.dmrcate.chrM,
+                                               nb.probes.chrM.chrY),
+                        "Description" = c("total number of probes in raw data",
+                                          "detection P < 0.01",
+                                          "only probes that start with cg",
+                                          "DMRcate",
+                                          "delete probes on chrM",
+                                          "delete probes on chrY"),
+                        "Difference" = c("-",
+                                         nb.probes.detectP - nb.probes,
+                                         nb.probes.detectP.cg - nb.probes.detectP,
+                                         nb.probes.cg.dmrcate - nb.probes.detectP.cg,
+                                         nb.probes.dmrcate.chrM - nb.probes.cg.dmrcate,
+                                         nb.probes.chrM.chrY - nb.probes.dmrcate.chrM)
+)
+df.probes
+
+df.chrAuto.probes <- data.frame("Number of probes" = c(nb.chrAuto.probes,
+                                                       nb.chrAuto.probes.detectP,
+                                                       nb.chrAuto.probes.detectP.cg,
+                                                       nb.chrAuto.probes.cg.dmrcate),
+                        "Description" = c("autosome total number of probes in raw data",
+                                          "autosome detection P < 0.01",
+                                          "autosome only probes that start with cg",
+                                          "autosome DMRcate"),
+                        "Difference" = c("-",
+                                         nb.chrAuto.probes.detectP - nb.chrAuto.probes,
+                                         nb.chrAuto.probes.detectP.cg - nb.chrAuto.probes.detectP,
+                                         nb.chrAuto.probes.cg.dmrcate - nb.chrAuto.probes.detectP.cg)
+)
+df.chrAuto.probes
+
+df.chrX.probes <- data.frame("Number of probes" = c(nb.chrX.probes,
+                                                    nb.chrX.probes.detectP,
+                                                    nb.chrX.probes.detectP.cg,
+                                                    nb.chrX.probes.cg.dmrcate),
+                        "Description" = c("chromosome X total number of probes in raw data",
+                                          "chromosome X detection P < 0.01",
+                                          "chromosome X only probes that start with cg",
+                                          "chromosome X DMRcate"),
+                        "Difference" = c("-",
+                                         nb.chrX.probes.detectP - nb.chrX.probes,
+                                         nb.chrX.probes.detectP.cg - nb.chrX.probes.detectP,
+                                         nb.chrX.probes.cg.dmrcate - nb.chrX.probes.detectP.cg)
+)
+df.chrX.probes
+
+df.chrY.probes <- data.frame("Number of probes" = c(nb.chrY.probes,
+                                                    nb.chrY.probes.detectP,
+                                                    nb.chrY.probes.detectP.cg,
+                                                    nb.chrY.probes.cg.dmrcate,
+                                                    nb.chrY.probes.chrM.chrY),
+                        "Description" = c("chromosome Y total number of probes in raw data",
+                                          "chromosome Y detection P < 0.01",
+                                          "chromosome Y only probes that start with cg",
+                                          "chromosome Y DMRcate",
+                                          "delete probes on chrY"),
+                        "Difference" = c("-",
+                                         nb.chrY.probes.detectP - nb.chrY.probes,
+                                         nb.chrY.probes.detectP.cg - nb.chrY.probes.detectP,
+                                         nb.chrY.probes.cg.dmrcate - nb.chrY.probes.detectP.cg,
+                                         nb.chrY.probes.chrM.chrY - nb.chrY.probes.cg.dmrcate)
+)
+df.chrY.probes
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(
+  df.samples,
+  df.female.samples,
+  df.male.samples,
+  df.probes,
+  df.chrAuto.probes,
+  df.chrX.probes,
+  df.chrY.probes,
+  file = file.path(data.dir.table, "/GASPARONI_table.rda"))
+```
+
+# Compute neuron proportion
+
+Data from  https://www.tandfonline.com/doi/full/10.4161/epi.23924
+
+```{R, include = FALSE, eval = TRUE}
+objects <- load("../../coMethDMR_metaAnalysis/CET/CETS_Image.RData")
+load(paste0(data.dir.pca, "/GASPARONI_QNBMIQ_PCfiltered.rda"))
+```
+
+## Get reference profile from Caucasions + controls
+
+```{R}
+idx <- list(
+  controlNeuron = pdBrain$celltype == "N" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian",
+  controlGlia   = pdBrain$celltype == "G" & pdBrain$diag == "Control" & pdBrain$ethnicity == "Caucasian"
+)
+
+refProfile <- getReference(brain, idx)
+```
+
+### for all
+
+```{R}
+### Estimate proportions of neurons in samples
+
+### Limit to 10,000 cpgs in the refProfile dataset
+pfc <- betaQN_BMIQ_PCfiltered
+
+selected <- rownames(pfc) %in% rownames(refProfile)
+
+pfc.refcpgs <- pfc[selected, ]
+
+### Estimate proportion of neurons
+prop <- data.frame(estProportion(pfc.refcpgs, profile = refProfile))
+colnames(prop) <- "prop.neuron"
+
+### Merge pfc.refcpgs with phenotype file
+pheno_withNeuronProp_df <- merge(
+  pheno_df,
+  prop,
+  by.x = "sample",
+  by.y = "row.names"
+)
+```
+
+### for females
+
+```{R}
+### Estimate proportions of neurons in samples
+
+### Limit to 10,000 cpgs in the refProfile dataset
+pfc <- betaQN_BMIQ_PCfiltered_female
+
+selected <- rownames(pfc) %in% rownames(refProfile)
+
+pfc.refcpgs <- pfc[selected, ]
+
+### Estimate proportion of neurons
+prop <- data.frame(estProportion(pfc.refcpgs, profile = refProfile))
+colnames(prop) <- "prop.neuron"
+
+### Merge pfc.refcpgs with phenotype file
+pheno_female_withNeuronProp_df <- merge(
+  pheno_female_df,
+  prop,
+  by.x = "sample",
+  by.y = "row.names"
+)
+```
+
+### for males
+
+```{R}
+### Estimate proportions of neurons in samples
+
+### Limit to 10,000 cpgs in the refProfile dataset
+pfc <- betaQN_BMIQ_PCfiltered_male
+
+selected <- rownames(pfc) %in% rownames(refProfile)
+
+pfc.refcpgs <- pfc[selected, ]
+
+### Estimate proportion of neurons
+prop <- data.frame(estProportion(pfc.refcpgs, profile = refProfile))
+colnames(prop) <- "prop.neuron"
+
+### Merge pfc.refcpgs with phenotype file
+pheno_male_withNeuronProp_df <- merge(
+  pheno_male_df,
+  prop,
+  by.x = "sample",
+  by.y = "row.names"
+)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  betaQN_BMIQ_PCfiltered,
+  betaQN_BMIQ_PCfiltered_female,
+  betaQN_BMIQ_PCfiltered_male,
+  pheno_withNeuronProp_df,
+  pheno_female_withNeuronProp_df,
+  pheno_male_withNeuronProp_df,
+  file = paste0(data.dir.neuron, "/GASPARONI.rda")
+)
+```
+
+# Single cpg analysis
+
+```{R, include = FALSE, eval = TRUE}
+load(paste0(data.dir.neuron, "/GASPARONI.rda"))
+```
+
+## for all
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered
+pheno_df <- pheno_withNeuronProp_df
+  
+### Compute M values
+mval_mat <- log2(beta_mat / (1 - beta_mat))
+
+pheno_df$Sample <- pheno_df$sample
+mval_mat <- mval_mat[, pheno_df$Sample]
+# identical(pheno_df$Sample, colnames(mval_mat))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "sex", "prop.neuron", "slide", "sex*stage", "sex*age.brain")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+results_ordered_ls <- plyr::alply(mval_mat,1, function(row){
+
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_mat)
+
+  TestSingleRegion_interaction(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+
+}, .progress = "time",.parallel = TRUE)
+
+all_stage_linear_df <- plyr::ldply(results_ordered_ls, function(row){
+  row[row.names(row) == "stage", c("Estimate", "Std. Error", "Pr(>|t|)")]})
+colnames(all_stage_linear_df) <- c("cpg", "Estimate", "StdErr", "pValue")
+all_stage_linear_df$cpg <- as.character(all_stage_linear_df$cpg)
+# identical(row.names(mval_mat), all_stage_linear_df$cpg)
+all_stage_linear_df$fdr <- p.adjust(all_stage_linear_df$pValue, method = "fdr")
+all_stage_linear_df <- all_stage_linear_df[order(all_stage_linear_df$pValue), ]
+
+all_stageSexM_linear_df <- plyr::ldply(results_ordered_ls, function(row){
+  dat <- data.frame(
+    Estimate = row[row.names(row) == "stage:sexM", "Estimate"],
+    StdErr = row[row.names(row) == "stage:sexM", "Std. Error"],
+    pValue = row[row.names(row) == "stage:sexM", "Pr(>|t|)"],
+    stringsAsFactors = FALSE
+  )
+  if (nrow(dat) == 0){dat[1,] <- c(NA, NA, NA)}
+  dat})
+colnames(all_stageSexM_linear_df)[1] <- "cpg"
+all_stageSexM_linear_df$cpg <- as.character(all_stageSexM_linear_df$cpg)
+# identical(row.names(mval_mat), all_stageSexM_linear_df$cpg)
+all_stageSexM_linear_df$fdr <- p.adjust(all_stageSexM_linear_df$pValue, method = "fdr")
+all_stageSexM_linear_df <- all_stageSexM_linear_df[order(all_stageSexM_linear_df$pValue), ]
+
+all_ageSexM_linear_df <- plyr::ldply(results_ordered_ls, function(row){
+  dat <- data.frame(
+    Estimate = row[row.names(row) == "age.brain:sexM", "Estimate"],
+    StdErr = row[row.names(row) == "age.brain:sexM", "Std. Error"],
+    pValue = row[row.names(row) == "age.brain:sexM", "Pr(>|t|)"],
+    stringsAsFactors = FALSE
+  )
+  if (nrow(dat) == 0){dat[1,] <- c(NA, NA, NA)}
+  dat})
+colnames(all_ageSexM_linear_df)[1] <- "cpg"
+all_ageSexM_linear_df$cpg <- as.character(all_ageSexM_linear_df$cpg)
+# identical(row.names(mval_mat), all_ageSexM_linear_df$cpg)
+all_ageSexM_linear_df$fdr <- p.adjust(all_ageSexM_linear_df$pValue, method = "fdr")
+all_ageSexM_linear_df <- all_ageSexM_linear_df[order(all_ageSexM_linear_df$pValue), ]
+```
+
+## for female
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered_female
+pheno_df <- pheno_female_withNeuronProp_df
+  
+### Compute M values
+mval_mat <- log2(beta_mat / (1 - beta_mat))
+
+pheno_df$Sample <- pheno_df$sample
+mval_mat <- mval_mat[, pheno_df$Sample]
+# identical(pheno_df$Sample, colnames(mval_mat))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron", "slide")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
+
+female_stage_linear_df <- plyr::adply(mval_mat,1, function(row){
+
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_mat)
+
+  result <- TestSingleRegion(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+  result
+}, .progress = "time",.parallel = TRUE,.id = "cpg")
+
+colnames(female_stage_linear_df)[1] <- "cpg"
+female_stage_linear_df$cpg <- as.character(female_stage_linear_df$cpg)
+# identical(row.names(mval_mat), female_stage_linear_df$cpg)
+female_stage_linear_df$fdr <- p.adjust(female_stage_linear_df$pValue, method = "fdr")
+female_stage_linear_df <- female_stage_linear_df[order(female_stage_linear_df$pValue),]
+```
+
+## for male
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered_male
+pheno_df <- pheno_male_withNeuronProp_df
+  
+### Compute M values
+mval_mat <- log2(beta_mat / (1 - beta_mat))
+
+pheno_df$Sample <- pheno_df$sample
+mval_mat <- mval_mat[, pheno_df$Sample]
+# identical(pheno_df$Sample, colnames(mval_mat))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron", "slide")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e")
+
+male_stage_linear_df <- plyr::adply(mval_mat,1, function(row){
+
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_mat)
+
+  result <- TestSingleRegion(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+  result
+}, .progress = "time",.parallel = TRUE,.id = "cpg")
+
+colnames(male_stage_linear_df)[1] <- "cpg"
+male_stage_linear_df$cpg <- as.character(male_stage_linear_df$cpg)
+# identical(row.names(mval_mat), male_stage_linear_df$cpg)
+male_stage_linear_df$fdr <- p.adjust(male_stage_linear_df$pValue, method = "fdr")
+male_stage_linear_df <- male_stage_linear_df[order(male_stage_linear_df$pValue),]
+```
+
+```{R, include = FALSE}
+gasparoni_all_stage_linear_df <- all_stage_linear_df
+gasparoni_all_stageSexM_linear_df <- all_stageSexM_linear_df
+gasparoni_all_ageSexM_linear_df <- all_ageSexM_linear_df
+gasparoni_female_stage_linear_df <- female_stage_linear_df
+gasparoni_male_stage_linear_df <- male_stage_linear_df
+
+row.names(gasparoni_all_stage_linear_df) <- NULL
+row.names(gasparoni_all_stageSexM_linear_df) <- NULL
+row.names(gasparoni_all_ageSexM_linear_df) <- NULL
+row.names(gasparoni_female_stage_linear_df) <- NULL
+row.names(gasparoni_male_stage_linear_df) <- NULL
+
+cohort <- "GASPARONI"
+colnames(gasparoni_all_stage_linear_df) <- c(
+  "cpg", paste0(cohort, "_", colnames(gasparoni_all_stage_linear_df)[2:5]))
+colnames(gasparoni_all_stageSexM_linear_df) <- c(
+  "cpg", paste0(cohort, "_", colnames(gasparoni_all_stageSexM_linear_df)[2:5]))
+colnames(gasparoni_all_ageSexM_linear_df) <- c(
+  "cpg", paste0(cohort, "_", colnames(gasparoni_all_ageSexM_linear_df)[2:5]))
+colnames(gasparoni_female_stage_linear_df) <- c(
+  "cpg", paste0(cohort, "_", colnames(gasparoni_female_stage_linear_df)[2:5]))
+colnames(gasparoni_male_stage_linear_df) <- c(
+  "cpg", paste0(cohort, "_", colnames(gasparoni_male_stage_linear_df)[2:5]))
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  gasparoni_all_stage_linear_df,
+  gasparoni_all_stageSexM_linear_df,
+  gasparoni_all_ageSexM_linear_df,
+  gasparoni_female_stage_linear_df,
+  gasparoni_male_stage_linear_df,
+  file = paste0(data.dir.single.cpg.pval, "/GASPARONI_single_cpg.rda")
+)
+```
+
+<!-- ## Check differences in models above -->
+
+<!-- ```{R, include = FALSE, eval = TRUE} -->
+<!-- load(paste0(data.dir.single.cpg.pval, "/GASPARONI_single_cpg.rda")) -->
+<!-- ``` -->
+
+<!-- ### determine if age*sex is needed in the model for all samples -->
+
+<!-- ```{R} -->
+<!-- hist(all_ageSexM_linear_df$pValue) -->
+<!-- table(all_ageSexM_linear_df$pValue < 0.05) -->
+
+<!-- hist(all_stageSexM_linear_df$pValue) -->
+<!-- table(all_stageSexM_linear_df$pValue < 0.05) -->
+<!-- ``` -->
+
+<!-- ### understand which probes are sig in stratified analysis, but not interaction model, or vice versa -->
+
+<!-- #### create a table combining results from sex stratified analysis and interaction analysis -->
+
+<!-- ```{R, message = FALSE, warning = FALSE, results = 'hide'} -->
+<!-- library(sesame) -->
+<!-- library(coMethDMR) -->
+<!-- ``` -->
+
+<!-- ```{R} -->
+<!-- all_stageSexM_linear_df2 <- all_stageSexM_linear_df[, c("cpg", "Estimate", "pValue")] -->
+<!-- colnames(all_stageSexM_linear_df2) <- c("cpg", "est_stageSexM", "pval_stageSexM") -->
+
+<!-- female_stage_linear_df2 <- female_stage_linear_df[, c("cpg", "Estimate", "pValue")] -->
+<!-- colnames(female_stage_linear_df2) <- c("cpg", "est_stage_f", "pval_stage_f") -->
+<!-- female_stage_linear_df2 <- female_stage_linear_df2[ -->
+<!--   match(all_stageSexM_linear_df2$cpg, female_stage_linear_df2$cpg),] -->
+
+<!-- male_stage_linear_df2 <- male_stage_linear_df[, c("cpg", "Estimate", "pValue")] -->
+<!-- colnames(male_stage_linear_df2) <- c("cpg", "est_stage_m", "pval_stage_m") -->
+<!-- male_stage_linear_df2 <- male_stage_linear_df2[ -->
+<!--   match(all_stageSexM_linear_df2$cpg, male_stage_linear_df2$cpg),] -->
+
+<!-- dat <- cbind( -->
+<!--   female_stage_linear_df2, -->
+<!--   male_stage_linear_df2[,c("est_stage_m", "pval_stage_m")], -->
+<!--   all_stageSexM_linear_df2[,c("est_stageSexM", "pval_stageSexM")]) -->
+
+<!-- row.names(dat) <- NULL -->
+<!-- dat$sig_female <- ifelse(dat$pval_stage_f < 0.05, 1, 0) -->
+<!-- dat$sig_male <- ifelse(dat$pval_stage_m < 0.05, 1, 0) -->
+<!-- dat$sig_stratified <- ifelse( -->
+<!--   (dat$sig_female == 1 & dat$sig_male == 0) | (dat$sig_female == 0 & dat$sig_male == 1), 1, 0 -->
+<!-- ) -->
+<!-- dat$sig_intxn <- ifelse(dat$pval_stageSexM < 0.05, 1, 0) -->
+
+<!-- ### add annotation -->
+<!-- probes.info <- sesameDataGet("HM450.hg19.manifest") -->
+<!-- probes.info <- probes.info[dat$cpg] %>% as.data.frame %>% -->
+<!--   dplyr::select(c("seqnames","start","end")) -->
+<!-- probes.info$seqnames <- as.character(probes.info$seqnames) -->
+<!-- colnames(probes.info)[1] <- "chrom" -->
+
+<!-- dat_withInfo <- merge( -->
+<!--   dat, probes.info, -->
+<!--   by.x = "cpg", -->
+<!--   by.y = "row.names", -->
+<!--   sort = FALSE) -->
+
+<!-- annot <- readRDS(paste0(data.annot, "/full.annot.RDS")) -->
+<!-- annot <- annot[, c("ILMNID", "UCSC_REFGENE_GROUP", "UCSC_REFGENE_ACCESSION", -->
+<!--                    "UCSC_REFGENE_NAME", "RELATION_TO_UCSC_CPG_ISLAND")] -->
+<!-- colnames(annot) <- c("cpg", "UCSC_RefGene_Group", "UCSC_RefGene_Accession", -->
+<!--                      "UCSC_RefGene_Name", "Relation_to_Island") -->
+<!-- annot$cpg <- as.character(annot$cpg) -->
+
+<!-- dat_final <- merge( -->
+<!--   dat_withInfo, annot, -->
+<!--   by = "cpg", -->
+<!--   sort = FALSE -->
+<!-- ) -->
+<!-- dat_final <- dat_final[, c(1, 12:18, 2:11)] -->
+
+<!-- write.csv( -->
+<!--   dat_final, -->
+<!--   paste0(data.dir.single.cpg.pval, "/GASPARONI_sexStratified_vs_intxn_analysis_table.csv"), -->
+<!--   row.names = FALSE -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- #### generate figures to help understand -->
+
+<!-- ##### generate venn diagram -->
+
+<!-- ```{R, message = FALSE, warning = FALSE, results = 'hide'} -->
+<!-- library(GenomicRanges) -->
+<!-- library(ChIPpeakAnno) -->
+<!-- library(ggplot2) -->
+<!-- ``` -->
+
+<!-- ```{R, warning = FALSE, message = FALSE} -->
+<!-- sig_female_gr <- dat_final[dat_final$sig_female == 1,] %>% makeGRangesFromDataFrame() -->
+<!-- sig_male_gr <- dat_final[dat_final$sig_male == 1,] %>% makeGRangesFromDataFrame() -->
+<!-- sig_stratified_gr <- dat_final[dat_final$sig_stratified == 1,] %>% makeGRangesFromDataFrame() -->
+<!-- sig_intxn_gr <- dat_final[dat_final$sig_intxn == 1,] %>% makeGRangesFromDataFrame() -->
+
+<!-- ### Venn 1 -->
+<!-- methodsLabel <- c("sig in sex stratified analysis", "sig in interaction analysis") -->
+
+<!-- n <- length(methodsLabel) -->
+
+<!-- gg_color_hue <- function(n){ -->
+<!--   hues = seq(15, 375, length = n + 1) -->
+<!--   hcl(h = hues, l = 65, c = 100)[1:n] -->
+<!-- } -->
+
+<!-- cols = gg_color_hue(n) -->
+
+<!-- ranges.list <- list(sig_stratified_gr, sig_intxn_gr)  -->
+
+<!-- makeVennDiagram( -->
+<!--   ranges.list, -->
+<!--   NameOfPeaks = methodsLabel[1:n], -->
+<!--   totalTest = 60000,  -->
+<!--   by = "region", -->
+<!--   main = paste0(" "), -->
+<!--   col = c("#440154ff", "#21908dff"), -->
+<!--   fill = c(alpha("#440154ff",0.3), alpha("#21908dff",0.3)), -->
+<!--   cex = 1, -->
+<!--   fontfamily = "sans", -->
+<!--   cat.cex = 1, -->
+<!--   cat.default.pos = "outer", -->
+<!--   cat.pos = c(180, 180), -->
+<!--   cat.dist = c(-0.055, -0.055), -->
+<!--   cat.fontfamily = "sans", -->
+<!--   cat.col = c("#440154ff", "#21908dff")) -->
+
+<!-- ### Venn 2 -->
+<!-- methodsLabel <- c( -->
+<!--   "sig in female analysis", "sig in male analysis", -->
+<!--   "sig in sex stratified analysis", "sig in interaction analysis") -->
+
+<!-- n <- length(methodsLabel) -->
+
+<!-- gg_color_hue <- function(n){ -->
+<!--   hues = seq(15, 375, length = n + 1) -->
+<!--   hcl(h = hues, l = 65, c = 100)[1:n] -->
+<!-- } -->
+
+<!-- cols = gg_color_hue(n) -->
+
+<!-- ranges.list <- list(sig_female_gr, sig_male_gr, sig_stratified_gr, sig_intxn_gr)  -->
+
+<!-- # overlap for 1 repetition -->
+<!-- makeVennDiagram( -->
+<!--   ranges.list, -->
+<!--   NameOfPeaks = methodsLabel[1:n], -->
+<!--   totalTest = 60000,  -->
+<!--   by = "region", -->
+<!--   main = paste0(" "), -->
+<!--   col = c("#440154ff", "#21908dff", "#f9a242b2", "#ca0020"), -->
+<!--   fill = c(alpha("#440154ff",0.3), alpha("#21908dff",0.3), alpha("#f9a242b2",0.3), alpha("#ca0020",0.3)), -->
+<!--   cex = 1, -->
+<!--   fontfamily = "sans", -->
+<!--   cat.cex = 1, -->
+<!--   cat.default.pos = "outer", -->
+<!--   cat.pos = c(180, 180, 180, 180), -->
+<!--   cat.dist = c(-0.055, -0.055, -0.055, -0.055), -->
+<!--   cat.fontfamily = "sans", -->
+<!--   cat.col = c("#440154ff", "#21908dff", "#f9a242b2", "#ca0020")) -->
+<!-- ``` -->
+
+##### Take Residuals
+
+###### for all
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered
+pheno_df <- pheno_withNeuronProp_df
+
+mvalue_mat <- log2(beta_mat / (1 - beta_mat))
+mvalue_mat <- mvalue_mat[, pheno_df$sample]
+# identical(colnames(mvalue_mat),  pheno_df$sample)
+
+### Take residuals
+lmF <- function(mval){
+  fitE <- lm(
+    as.numeric(mval) ~ age.brain + prop.neuron + slide,
+    data = pheno_df,
+    na.action = na.exclude
+  )
+  residuals (fitE)
+}
+doParallel::registerDoParallel(cores = 6)
+resid_all <- plyr::adply(mvalue_mat,1,.fun = lmF,.progress = "time",.parallel = TRUE)
+rownames(resid_all) <- resid_all[,1]
+resid_all[,1] <- NULL
+colnames(resid_all) <- colnames(mvalue_mat)
+# dim(resid_all)
+# dim(mvalue_mat)
+```
+
+###### for female
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered_female
+pheno_df <- pheno_female_withNeuronProp_df
+
+mvalue_mat <- log2(beta_mat / (1 - beta_mat))
+mvalue_mat <- mvalue_mat[, pheno_df$sample]
+# identical(colnames(mvalue_mat),  pheno_df$sample)
+
+### Take residuals
+lmF <- function(mval){
+  fitE <- lm(
+    as.numeric(mval) ~ age.brain + prop.neuron + slide,
+    data = pheno_df,
+    na.action = na.exclude
+  )
+  residuals (fitE)
+}
+doParallel::registerDoParallel(cores = 6)
+resid_female <- plyr::adply(mvalue_mat,1,.fun = lmF,.progress = "time",.parallel = TRUE)
+rownames(resid_female) <- resid_female[,1]
+resid_female[,1] <- NULL
+colnames(resid_female) <- colnames(mvalue_mat)
+# dim(resid_female)
+# dim(mvalue_mat)
+```
+
+###### for male
+
+```{R, eval = FALSE}
+beta_mat <- betaQN_BMIQ_PCfiltered_male
+pheno_df <- pheno_male_withNeuronProp_df
+
+mvalue_mat <- log2(beta_mat / (1 - beta_mat))
+mvalue_mat <- mvalue_mat[, pheno_df$sample]
+# identical(colnames(mvalue_mat),  pheno_df$sample)
+
+### Take residuals
+lmF <- function(mval){
+  fitE <- lm(
+    as.numeric(mval) ~ age.brain + prop.neuron + slide,
+    data = pheno_df,
+    na.action = na.exclude
+  )
+  residuals (fitE)
+}
+doParallel::registerDoParallel(cores = 6)
+resid_male <- plyr::adply(mvalue_mat,1,.fun = lmF,.progress = "time",.parallel = TRUE)
+rownames(resid_male) <- resid_male[,1]
+resid_male[,1] <- NULL
+colnames(resid_male) <- colnames(mvalue_mat)
+# dim(resid_male)
+# dim(mvalue_mat)
+```
+
+```{R, eval = FALSE, include = FALSE}
+save(
+  resid_all,
+  resid_female,
+  resid_male,
+  pheno_withNeuronProp_df,
+  pheno_female_withNeuronProp_df,
+  pheno_male_withNeuronProp_df,
+  file = paste0(data.dir.residuals, "/GASPARONI_resid.rda")
+)
+```
+
+<!-- ##### Plot some example probes for following scenarios -->
+
+<!-- ```{R, warning = FALSE, message = FALSE, result = "hide"} -->
+<!-- library(ggplot2) -->
+<!-- ``` -->
+
+<!-- ```{R, include = FALSE, eval = TRUE} -->
+<!-- load(paste0(data.dir.residuals, "/GASPARONI_resid.rda")) -->
+<!-- dat_final <- read.csv(paste0(data.dir.single.cpg.pval, "/GASPARONI_sexStratified_vs_intxn_analysis_table.csv")) -->
+<!-- ``` -->
+
+<!-- ```{R} -->
+<!-- plotResidStage <- function(data, row){ -->
+<!--   dat <- data.frame( -->
+<!--     pheno_withNeuronProp_df, -->
+<!--     resid = unlist(resid_all[row.names(resid_all) == data$cpg[row],]), -->
+<!--     stringsAsFactors = FALSE -->
+<!--   ) -->
+
+<!--   ggplot(dat, aes(x = stage, y = resid, color = sex, shape = sex)) +  -->
+<!--     geom_point() + -->
+<!--     geom_smooth(method = lm, se=FALSE) + -->
+<!--     labs(title = paste0( -->
+<!--       data$cpg[row], ":", -->
+<!--       "pval_stage_f=", round(data$pval_stage_f[row],3), ", ", -->
+<!--       "pval_stage_m=", round(data$pval_stage_m[row],3), ", ", -->
+<!--       "pval_stageSex=", round(data$pval_stageSexM[row],3))) + -->
+<!--     theme_classic() -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ###### sig only in stratified analysis -->
+
+<!-- ```{R, warning = FALSE, message = FALSE} -->
+<!-- sig_stratified <- dat_final[ -->
+<!--   dat_final$sig_stratified == 1 & dat_final$sig_intxn == 0,] -->
+<!-- row.names(sig_stratified) <- NULL -->
+
+<!-- start = 9000 -->
+<!-- end = start + 100 -->
+<!-- pdf(file = paste0(data.dir.single.cpg.pval, "/GASPARONI_sig_stratified_only_resid_vs_stage.pdf")) -->
+<!-- for (i in start:end){ -->
+<!--   print(plotResidStage(data = sig_stratified, row = i)) -->
+<!-- } -->
+<!-- dev.off() -->
+<!-- ``` -->
+
+<!-- ###### sig only in interaction analysis -->
+
+<!-- ```{R, warning = FALSE, message = FALSE} -->
+<!-- sig_intxn <- dat_final[ -->
+<!--   dat_final$sig_stratified == 0 & dat_final$sig_intxn == 1,] -->
+<!-- row.names(sig_intxn) <- NULL -->
+
+<!-- start = 9000 -->
+<!-- end = start + 100 -->
+<!-- pdf(file = paste0(data.dir.single.cpg.pval, "/GASPARONI_sig_intxn_only_resid_vs_stage.pdf")) -->
+<!-- for (i in start:end){ -->
+<!--   print(plotResidStage(data = sig_intxn, row = i)) -->
+<!-- } -->
+<!-- dev.off() -->
+<!-- ``` -->
+
+<!-- ###### sig only in both analysis -->
+
+<!-- ```{R, warning = FALSE, message = FALSE} -->
+<!-- sig_both <- dat_final[ -->
+<!--   dat_final$sig_stratified == 1 & dat_final$sig_intxn == 1,] -->
+<!-- row.names(sig_both) <- NULL -->
+
+<!-- start = 9000 -->
+<!-- end = start + 100 -->
+<!-- pdf(file = paste0(data.dir.single.cpg.pval, "/GASPARONI_sig_both_resid_vs_stage.pdf")) -->
+<!-- for (i in start:end){ -->
+<!--   print(plotResidStage(data = sig_both, row = i)) -->
+<!-- } -->
+<!-- dev.off() -->
+<!-- ``` -->
+
+
+<!-- # Linear regression by regions median Methylation  -->
+
+<!-- ## Residuals control and coMethylated Regions -->
+
+<!-- 1. Take residuals -->
+<!-- 2. Find co-methylated regions -->
+
+<!-- Input:  -->
+
+<!-- - QNBMIQ_PCfiltered -->
+<!-- - pheno_withNeuronProp_df -->
+
+<!-- Output:  -->
+
+<!-- - QNBMIQ_PCfiltered_mvalResiduals -->
+<!-- - residuals_cometh_ls -->
+
+<!-- ### Find co-methylated regions -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- ### Import datasets -->
+<!-- mvalue_residuals_mat <- readRDS( -->
+<!--   paste0(data.dir.residuals, "/Gasparoni_QNBMIQ_PCfiltered_mvalResiduals.RDS") -->
+<!-- ) -->
+
+<!-- ### Call in functions -->
+<!-- library(coMethDMR) -->
+<!-- library(BiocParallel) -->
+
+<!-- probes.cluster.all <- coMethDMR::getPredefinedCluster(arrayType = "450k", -->
+<!--                                                       clusterType = "regions") -->
+
+<!-- ncores <- parallel::detectCores()/2 -->
+<!-- ### Find co-methylated clusters -->
+<!-- coMeth_ls <- CoMethAllRegions( -->
+<!--   dnam = mvalue_residuals_mat,       -->
+<!--   betaToM = FALSE,                    -->
+<!--   CpGs_ls = probes.cluster.all, -->
+<!--   arrayType = "450k", -->
+<!--   rDropThresh_num = 0.4, -->
+<!--   minPairwiseCorr = NULL, -->
+<!--   method = "spearman",              -->
+<!--   returnAllCpGs = TRUE,               -->
+<!--   output = "all", -->
+<!--   nCores_int = ncores, -->
+<!--   progressbar = FALSE -->
+<!-- ) -->
+
+<!-- saveRDS( -->
+<!--   coMeth_ls, -->
+<!--   paste0(data.dir.residuals,"/Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ## Linear regression by regions median Methylation  -->
+
+<!-- 1. Calculate medians by cluster and sample -->
+<!-- 2. linear regression -->
+
+<!-- Input:  -->
+
+<!-- - QNBMIQ_PCfiltered, -->
+<!-- - pheno_withNeuronProp_df -->
+<!-- - residuals_cometh_input_ls -->
+
+<!-- Output:  -->
+
+<!-- - info_df -->
+<!-- - mediansMval_df -->
+<!-- - linear_df_aging -->
+
+<!-- ### Calculate medians by cluster and sample -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- ### Import datasets -->
+<!-- beta_mat <- readRDS(paste0(data.dir.pca, -->
+<!--                            "/Gasparoni_QNBMIQ_PCfiltered.RDS")) -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS")) -->
+<!-- mval_mat <- log2(beta_mat / (1 - beta_mat)) %>% as.matrix() -->
+<!-- coMeth_ls <- readRDS( -->
+<!--   paste0(data.dir.residuals, "/Gasparoni_residuals_cometh_input_ls.RDS") -->
+<!-- ) -->
+
+<!-- ### Create info dataset -->
+<!-- input_cometh <- data.frame( -->
+<!--   inputRegion = coMeth_ls$inputRegion_chr, -->
+<!--   nCoMethRegion = coMeth_ls$nCoMethRegions_num, -->
+<!--   coMethRegion = names(coMeth_ls$coMeth_ls), -->
+<!--   nCpGs = unlist(lapply(coMeth_ls$coMeth_ls, length), use.names = FALSE), -->
+<!--   stringsAsFactors = FALSE -->
+<!-- ) -->
+
+<!-- input_cometh_nodup <- input_cometh[ -->
+<!--   !duplicated(input_cometh$coMethRegion), -->
+<!--   ] -->
+<!-- colnames(input_cometh_nodup) <- c( -->
+<!--   paste0(cohort, "_inputRegion"), -->
+<!--   paste0(cohort, "_nCoMethRegion"), -->
+<!--   paste0(cohort, "_coMethRegion"), -->
+<!--   paste0(cohort, "_nCpGs") -->
+<!-- ) -->
+
+<!-- saveRDS( -->
+<!--   input_cometh_nodup, -->
+<!--   paste0(data.dir.median, cohort,"_info_df.rds") -->
+<!-- ) -->
+
+<!-- ### Take median of probes in each cluster for each sample -->
+<!-- filename <-  paste0(paste0(data.dir.median, cohort, "_mediansMval_df.rds")) -->
+<!-- library(robustbase) -->
+<!-- mval_mat <- mval_mat[rownames(mval_mat) %in% unlist(coMeth_ls$coMeth_ls),] -->
+<!-- if(!file.exists(filename)){ -->
+<!--   medianMval.df <- plyr::ldply( -->
+<!--     coMeth_ls$coMeth_ls[!duplicated(names(coMeth_ls$coMeth_ls))], -->
+<!--     function(probes){ -->
+<!--       colMedians(mval_mat[as.character(probes),], na.rm = TRUE) -->
+<!--     }, -->
+<!--     .progress = "time" -->
+<!--   ) -->
+<!--   medianMval.df$.id <- NULL -->
+<!--   colnames(medianMval.df) <- colnames(mval_mat) -->
+<!--   saveRDS(medianMval.df, file = filename) -->
+<!-- } else { -->
+<!--   medianMval.df <- readRDS(filename) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ### Test all regions -- linear regressions -->
+
+<!-- ```{R, eval = TRUE} -->
+<!-- ### Import datasets -->
+<!-- cohort <- "Gasparoni" -->
+<!-- info_df <- readRDS(dir(data.dir.median, pattern = "info", full.names = TRUE)) -->
+<!-- mediansMval_df <- readRDS(dir(data.dir.median, pattern = "mediansMval", full.names = TRUE)) -->
+<!-- pheno_df <- readRDS(paste0(data.dir.neuron, "/pheno_withNeuronProp_df.RDS"))  -->
+
+<!-- ### Check variables before fitting model -->
+<!-- pheno_df$Sample <- pheno_df$sample -->
+<!-- identical(pheno_df$Sample, colnames(mediansMval_df)) -->
+
+<!-- pheno_df$sex <- as.factor(pheno_df$sex) -->
+<!-- pheno_df$slide <- as.factor(pheno_df$slide) -->
+<!-- # If rosmap cohort, don't forget batch effect -->
+
+<!-- str(pheno_df) -->
+<!-- ``` -->
+
+<!-- ```{R, eval = FALSE} -->
+<!-- devtools::source_gist("https://gist.github.com/tiagochst/d3a7b1639acf603916c315d23b1efb3e") -->
+
+<!-- predictors_char <- "stage" -->
+<!-- covariates_char <- c("age.brain", "sex", "prop.neuron", "slide") -->
+
+<!-- res_df <- TestAllRegions_noInfo( -->
+<!--   predictors_char = predictors_char, -->
+<!--   covariates_char = covariates_char, -->
+<!--   pheno_df = pheno_df, -->
+<!--   summarizedRegions_df = mediansMval_df -->
+<!-- ) -->
+
+<!-- colnames(res_df) <- c( -->
+<!--   paste0(cohort, "_estimate"), -->
+<!--   paste0(cohort, "_se"), -->
+<!--   paste0(cohort, "_pVal"), -->
+<!--   paste0(cohort, "_fdr") -->
+<!-- ) -->
+
+<!-- res_withInfo_df <- cbind(info_df, res_df) -->
+
+<!-- saveRDS( -->
+<!--   res_withInfo_df, -->
+<!--   paste0(data.dir.median,  cohort, "_linear_df.rds") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ```{R} -->
+<!-- file <- dir(data.dir.median,pattern = paste0(".*linear_df"), -->
+<!--             recursive = T, -->
+<!--             full.names = TRUE, -->
+<!--             ignore.case = T) -->
+<!-- file -->
+<!-- res_withInfo_df <- readRDS(file) -->
+<!-- dim(res_withInfo_df) -->
+<!-- res_withInfo_df -->
+<!-- ``` -->
+
+<!-- # Data final -->
+
+<!-- ```{R} -->
+<!-- dir(path = data.dir,recursive = T, pattern = ".rda|.csv|.RDS") -->
+<!-- ``` -->
+
+# Session information
+```{R}
+devtools::session_info()
+```
