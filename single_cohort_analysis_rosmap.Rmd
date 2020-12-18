@@ -1,5 +1,5 @@
 ---
-title: "ROSMAP dataset"
+title: "Rosmap dataset"
 author: "Lanyu Zhang, Lissette Gomez, Tiago C. Silva, Lily Wang"
 date: "`r Sys.Date()`"
 output:

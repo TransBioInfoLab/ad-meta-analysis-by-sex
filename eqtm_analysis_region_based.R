@@ -1,3 +1,5 @@
+#author: Tiago C. Silva, Lily Wang
+
 library(rGREAT)
 library(dplyr)
 

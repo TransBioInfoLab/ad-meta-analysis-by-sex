@@ -1,4 +1,4 @@
-setwd("M:/AD/analysis/projects/Sex_strat/Aim3/Meta-analysis/Lissette/RosmapImputedData/mQTLanalysis_bySex/CpGs_SNPs_bySex/Male")
+#author: Lissette Gomez, Lily Wang
 
 ## Read pheno file
 RosmapCov <- read.table("../covAgeBatchPCs.txt", header = TRUE)

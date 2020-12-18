@@ -1,3 +1,5 @@
+#author: Tiago C. Silva, Lily Wang
+
 library(rGREAT)
 
 readr::read_csv("~/Dropbox (BBSR)/AD_metaAnalysis_bySex/meta_analysis_single_cpg_results/summary_table_for_single_cpg_analysis.csv") %>% 

@@ -3,7 +3,8 @@ Lanyu Zhang, Juan I. Young, Lissette Gomez, Tiago C. Silva, Michael A. Schmidt, 
 
 ### Description
 
-Sex is an important factor that contributes to the clinical and biological heterogeneities in Alzheimer’s disease. DNA methylation is a major epigenetic modification that is known to be involved in AD.  
+Sex is an important factor that contributes to the clinical and biological heterogeneities in Alzheimer’s disease. DNA methylation is a major epigenetic modification that is known to be involved in AD. 
+
 We studied DNA methylation changes across different AD Braak stages in over 1000 postmortem prefrontal cortex brain samples by performing meta-analyses on four brain studies. To identify sex-specific methylation changes, we employed two complementary approaches, a sex-stratified analysis that examined methylation-Braak stage associations in male and female samples separately, and a sex-by-Braak stage interaction analysis that compared the magnitude of these associations between different sexes.  
 
 ### Single cohort analysis
@@ -30,12 +31,12 @@ We studied DNA methylation changes across different AD Braak stages in over 1000
 |----------------------|
 | enrichment_analysis.rmd |
 
-### Correlation of significant DMRs with expression of nearby genes
+### Correlation of significant DNA methylation changes with expression of nearby genes
 
 | File                 |
 |----------------------|
-| gene_expression_analysis_single_cpg.R |
-| gene_expression_analysis_region_based.R |
+| eqtm_analysis_single_cpg.R |
+| eqtm_analysis_region_based.R |
 
 ### Correlation and co-localization with genetic susceptibility loci
 
