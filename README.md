@@ -31,14 +31,14 @@ We studied DNA methylation changes across different AD Braak stages in over 1000
 |----------------------|-------------|
 | enrichment_analysis.rmd | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/enrichment_analysis.rmd) |
 
-### Correlation of significant DNA methylation changes with expression of nearby genes
+### Correlation of significant DNA methylation changes with expressions of nearby genes
 
 | File                 | Link |
 |----------------------|-------------|
 | eqtm_analysis_single_cpg.R | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/eqtm_analysis_single_cpg.R) |
 | eqtm_analysis_region_based.R | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/eqtm_analysis_region_based.R) |
 
-### Correlation and co-localization with genetic susceptibility loci
+### Correlation of significant DNA methylation chagnes with genetic variants
 
 | File                 | Link |
 |----------------------|-------------|
