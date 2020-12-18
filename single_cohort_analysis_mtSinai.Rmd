@@ -1,0 +1,1004 @@
+---
+title: "MtSinai dataset"
+author: "Lanyu Zhang, Lissette Gomez, Tiago C. Silva, Lily Wang"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    highlight: kate
+    toc: true
+    number_sections: true
+    df_print: paged
+    code_download: true
+    toc_float:
+      collapsed: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: inline    
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data retrival
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(dplyr)
+library(minfi)
+library(IlluminaHumanMethylation450kmanifest)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+
+```{R}
+cohort <- "MtSinai"
+data.dir <- file.path("../DATASETS",cohort)
+data.dir.old <- file.path("../../coMethDMR_metaAnalysis/code_validation/Meta_analysis_code/DATASETS", cohort)
+data.dir.table <- "../DATASETS/Summary_Table/" 
+data.dir.raw <- "../../coMethDMR_metaAnalysis/code_validation/Meta_analysis_code/DATASETS/MtSinai/step1_download/"
+data.dir.clinical.filter <- file.path(data.dir,"step2_clinical_available_filtering/") 
+data.dir.probes.qc <- file.path(data.dir,"step3_probesQC_filtering/") 
+data.dir.probes.normalization <- file.path(data.dir,"step4_normalization/") 
+data.dir.pca <- file.path(data.dir,"step5_pca_filtering/") 
+data.dir.old.pca <- file.path(data.dir.old,"step5_pca_filtering/") 
+data.dir.neuron <- file.path(data.dir,"step6_neuron_comp/")
+data.dir.old.neuron <- file.path(data.dir.old,"step6_neuron_comp/")
+data.annot <- "../../coMethDMR_metaAnalysis/DATA_annotations/"
+data.dir.single.cpg.pval <- file.path(data.dir,"step7_single_cpg_pval/") 
+data.dir.residuals <- file.path(data.dir,"step8_residuals/") 
+data.dir.region <- file.path(data.dir,"step9_region/")
+data.dir.median <- file.path(data.dir,"step10_median/")
+data.dir.region.pval <- file.path(data.dir,"step11_region_pval/")
+```
+
+# Call in pre-processed data on autosome from coMethDMR meta-analysis
+Script for pre-processing methylation data on autosome can be found at 
+https://rpubs.com/tiagochst/Supplemental_AD_MtSinai_dataset
+
+```{R}
+pheno_df <- readRDS(
+  file.path(data.dir.old.neuron, "pheno141_withNeuronProp_df.RDS")
+)
+beta_auto_mat <- readRDS(
+  file.path(data.dir.old.pca, "MtSinai_QNBMIQ_PCfiltered.RDS")
+)
+beta_auto_mat <- beta_auto_mat[, pheno_df$sample]
+# identical(colnames(beta_auto_mat), pheno_df$sample)
+```
+
+# Probe QC for data on chrX
+
+```{R, include = FALSE, eval = TRUE}
+beta_mat <- readRDS(file.path(data.dir.raw, "GSE80970_assay.rds"))
+beta_mat <- beta_mat[, pheno_df$sample]
+# identical(colnames(beta_mat), pheno_df$sample)
+```
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(minfi)
+library(DMRcate)
+library(sesame)
+```
+
+## Limit DNA methylation matrix on chrX
+
+```{R}
+# Find which chromosome each probe is on
+probes.info <- sesameDataGet("HM450.hg19.manifest")
+probes.info <- probes.info[row.names(beta_mat) %>% as.character()] %>%
+  as.data.frame %>%
+  dplyr::select(c("seqnames","start","end"))
+probes.info$seqnames <- as.character(probes.info$seqnames)
+
+# Limit beta_mat to probes on chrX
+probes.chrX <- row.names(probes.info)[probes.info$seqnames == "chrX"]
+beta_chrX_mat <- beta_mat[row.names(beta_mat) %in% probes.chrX, ]
+nb.chrX.probes <- sum(probes.info$seqnames == "chrX")
+```
+
+## Subset to probes with detection P > 0.01
+
+```{R}
+detP <- as.data.frame(
+  data.table::fread(file.path(data.dir.raw, "GSE80970_MSACF_raw_pvals.txt"))
+)
+row.names(detP) <- detP$ID_REF
+detP$ID_REF <- NULL
+detP <- detP[
+  ,match(paste0(pheno_df$subject.id, "AC"), colnames(detP))]
+colnames(detP) <- pheno_df$sample
+
+detP.chrX <- detP[row.names(detP) %in% probes.chrX, ]
+failed.01 <- detP.chrX > 0.01
+passedProbes <- rownames(failed.01)[rowMeans(failed.01) == 0] 
+beta_chrX_mat <- beta_chrX_mat[passedProbes, ]
+nb.chrX.probes.detectP <- nrow(beta_chrX_mat)
+```
+
+## Keep on probes with start with "cg"
+
+```{R}
+beta_chrX_mat <- beta_chrX_mat[grep("cg",rownames(beta_chrX_mat)),]
+nb.chrX.probes.detectP.cg <- nrow(beta_chrX_mat)
+```
+
+## Drop probes where SNP with MAF >= 0.01 in the last 5 bp of the probe
+
+```{R}
+beta_chrX_mat <- rmSNPandCH(
+  object = beta_chrX_mat,
+  dist = 5,
+  mafcut = 0.01,
+  and = TRUE,
+  rmcrosshyb = FALSE,
+  rmXY = FALSE
+)
+nb.chrX.probes.detectP.cg.dmrcate <- nrow(beta_chrX_mat)
+```
+
+## Merge DNA methylation matrix on autosome with the one on chrX
+
+```{R}
+identical(colnames(beta_auto_mat), colnames(beta_chrX_mat))
+beta_mat <- rbind(beta_auto_mat, beta_chrX_mat)
+beta_mat <- beta_mat[unique(row.names(beta_mat)),]
+```
+
+## Remove smoking probes
+
+```{R}
+smoking.file <- "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5267325/bin/NIHMS817273-supplement-001506_-_Supplemental_Tables.xlsx"
+
+if(!file.exists(basename(smoking.file))) downloader::download(smoking.file,basename(smoking.file))
+
+smoking <- readxl::read_xlsx(
+    basename(smoking.file),
+    sheet = "02",
+    skip = 2
+)
+smoking.sig.probes <- smoking %>%
+  dplyr::filter(`P-value` < 1*10^(-7)) %>%
+  pull("Probe ID")
+```
+
+```{R}
+beta_mat <- beta_mat[
+  !(row.names(beta_mat) %in% smoking.sig.probes),
+]
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  pheno_df,
+  beta_mat,
+  file = file.path(data.dir.neuron, "MTSINAI_new.rda")
+)
+```
+
+# Single cpg analysis
+
+## Take residuals
+
+```{R, include = FALSE, eval = TRUE}
+load(file.path(data.dir.neuron, "MTSINAI_new.rda"))
+```
+
+```{R}
+getResid <- function(beta_mat, pheno_df, parallel = FALSE){
+  mvalue_mat <- log2(beta_mat / (1 - beta_mat))
+  mvalue_mat <- mvalue_mat[, pheno_df$sample]
+  
+  lmF <- function(mval){
+    fitE <- tryCatch({
+      lm(
+        as.numeric(mval) ~ slide,
+        data = pheno_df,
+        na.action = na.exclude
+      )
+    }, error = function(e){
+      NULL
+    })
+    
+    if(is.null(fitE)){
+      mval
+    } else {
+      rstudent(fitE)
+    }
+  }
+  
+  resid_all <- plyr::adply(
+    mvalue_mat,1,
+    .fun = lmF,
+    .parallel = parallel,
+    .progress = "time"
+  )
+  
+  rownames(resid_all) <- resid_all[,1]
+  resid_all[,1] <- NULL
+  colnames(resid_all) <- colnames(mvalue_mat)
+  
+  resid_all
+}
+```
+
+```{R, eval = FALSE}
+# check before running function
+identical(colnames(beta_mat), pheno_df$sample)
+is.character(pheno_df$slide)
+
+doParallel::registerDoParallel(detectCores()/2)
+mval_noCovs_df <- getResid(
+  beta_mat = beta_mat,
+  pheno_df = pheno_df,
+  parallel = TRUE
+)
+mval_noCovs_mat <- as.matrix(mval_noCovs_df)
+```
+
+```{R}
+save(
+ mval_noCovs_mat,
+ pheno_df,
+ file = file.path(data.dir.single.cpg.pval, "MTSINAI_mval_noCovs_and_pheno.rda")
+)
+```
+
+## Linear model
+
+```{R, include = FALSE, eval = TRUE}
+load(file.path(data.dir.single.cpg.pval, "MTSINAI_mval_noCovs_and_pheno.rda"))
+```
+
+### For female
+
+```{R}
+# limit data to females
+pheno_female_df <- pheno_df %>% filter(sex == "female")
+mval_noCovs_female_mat <- mval_noCovs_mat[
+  , pheno_female_df$sample
+]
+
+# data check before modelling
+pheno_female_df$Sample <- pheno_female_df$sample
+is.numeric(pheno_female_df$stage)
+is.numeric(pheno_female_df$age.brain)
+is.numeric(pheno_female_df$prop.neuron)
+```
+
+```{R, eval = FALSE}
+# identical(pheno_female_df$Sample, colnames(mval_noCovs_female_mat))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron")
+
+doParallel::registerDoParallel(cores = detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_female_df <- plyr::adply(mval_noCovs_female_mat,1, function(row){
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_noCovs_female_mat)
+
+  result <- TestSingleRegion(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_female_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+  result
+},
+.progress = "time",
+.parallel = TRUE,
+.id = "cpg"
+)
+
+mtsinai_female_df$cpg <- as.character(mtsinai_female_df$cpg)
+# identical(row.names(mval_noCovs_female_mat), mtsinai_female_df$cpg)
+mtsinai_female_df$fdr <- p.adjust(mtsinai_female_df$pValue, method = "fdr")
+cohort <- "MTSINAI"
+colnames(mtsinai_female_df) <- c(
+  "cpg",
+  paste0(
+    cohort,
+    "_",
+    colnames(mtsinai_female_df)[2:ncol(mtsinai_female_df)]
+  )
+)
+```
+
+### For male
+
+```{R}
+# limit data to females
+pheno_male_df <- pheno_df %>% filter(sex == "male")
+mval_noCovs_male_mat <- mval_noCovs_mat[
+  , pheno_male_df$sample
+]
+
+# data check before modelling
+pheno_male_df$Sample <- pheno_male_df$sample
+is.numeric(pheno_male_df$stage)
+is.numeric(pheno_male_df$age.brain)
+is.numeric(pheno_male_df$prop.neuron)
+```
+
+```{R, eval = FALSE}
+# identical(pheno_male_df$Sample, colnames(mval_noCovs_male_mat))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron")
+
+doParallel::registerDoParallel(cores = detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_male_df <- plyr::adply(mval_noCovs_male_mat,1, function(row){
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_noCovs_male_mat)
+
+  result <- TestSingleRegion(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_male_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+  result
+},
+.progress = "time",
+.parallel = TRUE,
+.id = "cpg"
+)
+
+mtsinai_male_df$cpg <- as.character(mtsinai_male_df$cpg)
+# identical(row.names(mval_noCovs_male_mat), mtsinai_male_df$cpg)
+mtsinai_male_df$fdr <- p.adjust(mtsinai_male_df$pValue, method = "fdr")
+cohort <- "MTSINAI"
+colnames(mtsinai_male_df) <- c(
+  "cpg",
+  paste0(
+    cohort,
+    "_",
+    colnames(mtsinai_male_df)[2:ncol(mtsinai_male_df)]
+  )
+)
+```
+
+### For stageSex interaction
+
+```{R}
+# data check before modelling
+pheno_df$Sample <- pheno_df$sample
+pheno_df$sex <- ifelse(pheno_df$sex == "female", "Female", "Male")
+is.numeric(pheno_df$stage)
+is.numeric(pheno_df$age.brain)
+is.numeric(pheno_df$prop.neuron)
+```
+
+```{R}
+predictors_char <- "stage"
+covariates_char <- c("age.brain",
+                     "prop.neuron",
+                     "sex",
+                     "sex*stage",
+                     "sex*age.brain")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_stageSexMale_df <- plyr::adply(mval_noCovs_mat, 1, function(row){
+  
+  sumOneRegion_df <- data.frame(t(row))
+  colnames(sumOneRegion_df) <- colnames(mval_noCovs_mat)
+  
+  TestSingleRegion_interaction2(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_df,
+    sumOneRegion_df = sumOneRegion_df
+  )
+  
+},
+.progress = "time",
+.parallel = TRUE,
+.id = "cpg"
+)
+
+cohort <- "MTSINAI"
+colnames(mtsinai_stageSexMale_df) <- c(
+  "cpg",
+  paste0(cohort, "_", colnames(mtsinai_stageSexMale_df)[-1])
+)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  mtsinai_female_df,
+  mtsinai_male_df,
+  mtsinai_stageSexMale_df,
+  file = file.path(data.dir.single.cpg.pval, "MTSINAI_final_single_cpg_lm.rda")
+)
+```
+
+# Region based analysis
+
+## Find co-methylated regions
+
+```{R, include = FALSE}
+load(
+  file.path(data.dir.single.cpg.pval, "MTSINAI_mval_noCovs_and_pheno.rda")
+)
+
+probes.cluster.gene <- readRDS(
+  "../cpgList_3_200_withChrX/Gene_3_200_withChrX.RDS"
+)
+probes.cluster.intergene <- readRDS(
+  "../cpgList_3_200_withChrX/InterGene_3_200_withChrX.RDS"
+)
+```
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(coMethDMR)
+library(BiocParallel)
+```
+
+```{R}
+probes.cluster.all <- c(
+  probes.cluster.gene, probes.cluster.intergene
+)
+
+ncores <- detectCores()/2
+
+getCluster <- function(resid){
+  CoMethAllRegions(
+    dnam = resid,
+    betaToM = FALSE,
+    CpGs_ls = probes.cluster.all,
+    arrayType = "450k",
+    rDropThresh_num = 0.4,
+    minPairwiseCorr = NULL,
+    method = "spearman",
+    returnAllCpGs = TRUE,
+    output = "all",
+    nCores_int = ncores,
+    progressbar = FALSE
+  )
+}
+```
+
+```{R, eval = FALSE}
+cometh_all <- getCluster(resid = mval_noCovs_mat)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+ cometh_all,
+ file = file.path(data.dir.region, "MTSINAI_region.rda")
+)
+```
+
+## Summarize regions with median
+
+```{R}
+library(robustbase)
+```
+
+```{R, include = FALSE}
+load(file.path(data.dir.single.cpg.pval, "MTSINAI_mval_noCovs_and_pheno.rda"))
+load(file.path(data.dir.region, "MTSINAI_region.rda"))
+```
+
+```{R}
+getInfo <- function(cohort, coMeth_ls){
+
+  input_cometh <- data.frame(
+    inputRegion = coMeth_ls$inputRegion_chr,
+    nCoMethRegion = coMeth_ls$nCoMethRegions_num,
+    coMethRegion = names(coMeth_ls$coMeth_ls),
+    nCpGs = unlist(lapply(coMeth_ls$coMeth_ls, length), use.names = FALSE),
+    stringsAsFactors = FALSE)
+  
+  input_cometh_nodup <- input_cometh[!duplicated(input_cometh$coMethRegion),]
+  
+  colnames(input_cometh_nodup) <- c(
+    paste0(cohort, "_inputRegion"),
+    paste0(cohort, "_nCoMethRegion"),
+    paste0(cohort, "_coMethRegion"),
+    paste0(cohort, "_nCpGs"))
+  
+  input_cometh_nodup
+}
+
+sumRegion <- function(mval_mat, coMeth_ls){
+
+  mval_mat <- mval_mat[rownames(mval_mat) %in% unlist(coMeth_ls$coMeth_ls),]
+  
+  median_df <- plyr::ldply(
+    coMeth_ls$coMeth_ls[!duplicated(names(coMeth_ls$coMeth_ls))],
+    function(probes){
+      colMedians(mval_mat[as.character(probes),], na.rm = TRUE)
+    },
+    .progress = "time"
+  )
+  
+  row.names(median_df) <- median_df$.id
+  median_df$.id <- NULL
+  colnames(median_df) <- colnames(mval_mat)
+  
+  median_df
+}
+```
+
+```{R, eval = FALSE}
+info_all <- getInfo(
+  cohort = "MTSINAI",
+  coMeth_ls = cometh_all
+)
+
+median_all <- sumRegion(
+  mval_mat = mval_noCovs_mat,
+  coMeth_ls = cometh_all
+)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  info_all,
+  median_all,
+  file = file.path(data.dir.median, "MTSINAI_median.rda")
+)
+```
+
+## Test all regions
+
+```{R, include = FALSE}
+load(file.path(data.dir.single.cpg.pval, "MTSINAI_mval_noCovs_and_pheno.rda"))
+load(file.path(data.dir.median, "MTSINAI_median.rda"))
+```
+
+```{R}
+cohort <- "MTSINAI"
+pheno_df$Sample <- pheno_df$sample
+```
+
+### For female
+
+```{R}
+pheno_female_df <- pheno_df %>% filter(sex == "female")
+median_female <- median_all[, pheno_female_df$Sample]
+
+is.numeric(pheno_female_df$stage)
+is.numeric(pheno_female_df$age.brain)
+is.numeric(pheno_female_df$prop.neuron)
+```
+
+```{R, eval = FALSE}
+# identical(pheno_female_df$Sample, colnames(median_female))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_female_df <- plyr::adply(median_female, 1, function(row){
+
+    TestSingleRegion(
+      predictors_char = predictors_char,
+      covariates_char = covariates_char,
+      pheno_df = pheno_female_df,
+      sumOneRegion_df = row
+    )
+  },
+  .progress = "time",
+  .parallel = TRUE,
+  .expand = F
+) %>% select(-X1)
+mtsinai_female_df$fdr <- p.adjust(
+  mtsinai_female_df$pValue,
+  method = "fdr"
+)
+colnames(mtsinai_female_df) <- paste0(
+  cohort, "_", c("Estimate", "StdErr", "pValue", "fdr"))
+mtsinai_female_df <- cbind(
+  info_all, mtsinai_female_df)
+mtsinai_female_df <- mtsinai_female_df %>%
+  arrange(MTSINAI_pValue)
+```
+
+### For male
+
+```{R}
+pheno_male_df <- pheno_df %>% filter(sex == "male")
+median_male <- median_all[, pheno_male_df$Sample]
+
+is.numeric(pheno_male_df$stage)
+is.numeric(pheno_male_df$age.brain)
+is.numeric(pheno_male_df$prop.neuron)
+```
+
+```{R, eval = FALSE}
+# identical(pheno_male_df$Sample, colnames(median_male))
+
+predictors_char <- "stage"
+covariates_char <- c("age.brain", "prop.neuron")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_male_df <- plyr::adply(median_male, 1, function(row){
+
+    TestSingleRegion(
+      predictors_char = predictors_char,
+      covariates_char = covariates_char,
+      pheno_df = pheno_male_df,
+      sumOneRegion_df = row
+    )
+  },
+  .progress = "time",
+  .parallel = TRUE,
+  .expand = F
+) %>% select(-X1)
+mtsinai_male_df$fdr <- p.adjust(
+  mtsinai_male_df$pValue,
+  method = "fdr"
+)
+colnames(mtsinai_male_df) <- paste0(
+  cohort, "_", c("Estimate", "StdErr", "pValue", "fdr"))
+mtsinai_male_df <- cbind(
+  info_all, mtsinai_male_df)
+mtsinai_male_df <- mtsinai_male_df %>%
+  arrange(MTSINAI_pValue)
+```
+
+### For stageSex interaction
+
+```{R}
+pheno_df$sex <- ifelse(pheno_df$sex == "female", "Female", "Male")
+is.numeric(pheno_df$stage)
+is.numeric(pheno_df$age.brain)
+is.numeric(pheno_df$prop.neuron)
+```
+
+```{R}
+predictors_char <- "stage"
+covariates_char <- c("age.brain",
+                     "prop.neuron",
+                     "sex",
+                     "sex*stage",
+                     "sex*age.brain")
+
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+devtools::source_gist("https://gist.github.com/Jennyzly2016/935a94eadb981dc89e441e296ccf7669")
+
+mtsinai_stageSexMale_df <- plyr::adply(median_all, 1, function(row){
+  
+  TestSingleRegion_interaction2(
+    predictors_char = predictors_char,
+    covariates_char = covariates_char,
+    pheno_df = pheno_df,
+    sumOneRegion_df = row
+  )
+  
+}, 
+.expand = F,
+.id = NULL,
+.progress = "time",
+.parallel = TRUE
+)
+
+colnames(mtsinai_stageSexMale_df) <- paste0(
+  cohort, "_", colnames(mtsinai_stageSexMale_df)
+)
+
+mtsinai_stageSexMale_df <- cbind(info_all, mtsinai_stageSexMale_df)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  mtsinai_female_df,
+  mtsinai_male_df,
+  mtsinai_stageSexMale_df,
+  file = file.path(data.dir.region.pval, "MTSINAI_final_region_based_lm.rda")
+)
+```
+
+# Calculate inflation factors and Bacon correction for final results
+
+```{R, message = FALSE, warning = FALSE, result = "hide"}
+library(dplyr)
+library(bacon)
+library(GWASTools)
+```
+
+## Auxiliary function
+
+```{R}
+estimation_of_inflation <- function(data, df){
+  ### 1. Compute genomic inflation factor before bacon adjustment
+  data$tvalue <- data$Estimate / data$StdErr
+  data$zvalue <- qnorm(pt(data$tvalue, df))
+  data$chisq <- (data$zvalue) ^ 2
+
+  # inflation factor - last term is median from chisq distrn with 1 df  
+  inflationFactor <- median(data$chisq,na.rm = TRUE) / qchisq(0.5, 1)
+  print("lambda")
+  print(inflationFactor)
+
+  # genome-wide sig cpgs
+  sig <- ifelse(data$pValue < 2.4e-7, 1, 0)
+  # table(sig)  # 1 sig
+
+  ### 2. bacon analysis
+  bc <- bacon(
+    teststatistics = NULL,
+    effectsizes =  data$Estimate,
+    standarderrors = data$StdErr,
+    na.exclude = TRUE
+  )
+
+  # inflation factor
+  print("lambda.bacon")
+  print(inflation(bc))
+  
+  ### 3. Create final dataset
+  data.with.inflation <- data.frame(
+    data,
+    Estimate.bacon = bacon::es(bc),
+    StdErr.bacon = bacon::se(bc),
+    pValue.bacon = pval(bc),
+    fdr.bacon = p.adjust(pval(bc), method = "fdr"),
+    stringsAsFactors = FALSE
+  )
+  data.with.inflation <- data.with.inflation %>% select(-c(tvalue, zvalue, chisq))
+  return(
+    list(
+      "data.with.inflation" = data.with.inflation,
+      "inflationFactor" =   inflationFactor,
+      "estimatedInflation" = inflation(bc)
+    )
+  )
+}
+```
+
+```{R}
+cohort <- "MtSinai"
+```
+
+## For single cpg results
+
+```{R}
+load(file.path(data.dir.single.cpg.pval, "MTSINAI_final_single_cpg_lm.rda"))
+analysis <- "Single CpG Analysis"
+```
+
+### For female
+
+```{R}
+colnames(mtsinai_female_df) <- gsub(
+  "MTSINAI_", "", colnames(mtsinai_female_df)
+)
+mtsinai_female_bacon_df <- estimation_of_inflation(
+  data = mtsinai_female_df, df = 88-4)$data.with.inflation
+colnames(mtsinai_female_bacon_df) <- c(
+  "cpg",
+  paste0("MTSINAI_", colnames(mtsinai_female_bacon_df)[-1])
+)
+```
+
+```{R}
+gender <- "Females"
+est.inflation <- estimation_of_inflation(
+  data = mtsinai_female_df, df = 88-4
+)
+res.with.inflation <- est.inflation$data.with.inflation
+
+qqPlot(res.with.inflation$pValue, ci = TRUE, 
+       main = paste0(cohort, " cohort")) +
+text(
+  x = 0.5, 
+  y = 5,
+  labels = bquote(lambda == .(format(est.inflation$inflationFactor,digits = 4))),
+  pos = 4
+) +
+text(
+  x = 0.5, 
+  y = 4,
+ labels = bquote(lambda[bacon] == .(format(est.inflation$estimatedInflation,digits = 4))),
+  pos = 4
+)
+qqplot.cohort <- recordPlot()
+
+pdf(paste0("../inflation_factors_results/plots/", analysis, " for ", gender, " in ", cohort, " Cohort.pdf"))
+qqplot.cohort
+dev.off()
+```
+
+### For male
+
+```{R}
+colnames(mtsinai_male_df) <- gsub(
+  "MTSINAI_", "", colnames(mtsinai_male_df)
+)
+mtsinai_male_bacon_df <- estimation_of_inflation(
+  data = mtsinai_male_df, df = 53-4)$data.with.inflation
+colnames(mtsinai_male_bacon_df) <- c(
+  "cpg",
+  paste0("MTSINAI_", colnames(mtsinai_male_bacon_df)[-1])
+)
+```
+
+```{R}
+gender <- "Males"
+est.inflation <- estimation_of_inflation(
+  data = mtsinai_male_df, df = 53-4
+)
+res.with.inflation <- est.inflation$data.with.inflation
+
+qqPlot(res.with.inflation$pValue, ci = TRUE, 
+       main = paste0(cohort, " cohort")) +
+text(
+  x = 0.5, 
+  y = 5,
+  labels = bquote(lambda == .(format(est.inflation$inflationFactor,digits = 4))),
+  pos = 4
+) +
+text(
+  x = 0.5, 
+  y = 4,
+ labels = bquote(lambda[bacon] == .(format(est.inflation$estimatedInflation,digits = 4))),
+  pos = 4
+)
+qqplot.cohort <- recordPlot()
+
+pdf(paste0("../inflation_factors_results/plots/", analysis, " for ", gender, " in ", cohort, " Cohort.pdf"))
+qqplot.cohort
+dev.off()
+```
+
+### For stageSex interaction
+
+```{R}
+colnames(mtsinai_stageSexMale_df) <- gsub(
+  "MTSINAI_stageSexMale_", "", colnames(mtsinai_stageSexMale_df)
+)
+mtsinai_stageSexMale_bacon_df <- estimation_of_inflation(
+  data = mtsinai_stageSexMale_df, df = 141-7)$data.with.inflation
+colnames(mtsinai_stageSexMale_bacon_df) <- c(
+  "cpg",
+  paste0("MTSINAI_stageSexMale_", colnames(mtsinai_stageSexMale_bacon_df)[-1])
+)
+```
+
+```{R}
+save(
+  mtsinai_female_bacon_df,
+  mtsinai_male_bacon_df,
+  mtsinai_stageSexMale_bacon_df,
+  file = file.path(
+    data.dir.single.cpg.pval, "MTSINAI_final_single_cpg_lm_bacon.rda"
+  )
+)
+```
+
+## For region based results
+
+```{R}
+load(file.path(data.dir.region.pval, "MTSINAI_final_region_based_lm.rda"))
+analysis <- "Region Based Analysis"
+```
+
+### For female
+
+```{R}
+colnames(mtsinai_female_df) <- gsub(
+  "MTSINAI_", "", colnames(mtsinai_female_df)
+)
+mtsinai_female_bacon_df <- estimation_of_inflation(
+  data = mtsinai_female_df, df = 88-4)$data.with.inflation
+colnames(mtsinai_female_bacon_df) <- paste0(
+  "MTSINAI_", colnames(mtsinai_female_bacon_df)
+)
+```
+
+```{R}
+gender <- "Females"
+est.inflation <- estimation_of_inflation(
+  data = mtsinai_female_df, df = 88-4
+)
+res.with.inflation <- est.inflation$data.with.inflation
+
+qqPlot(res.with.inflation$pValue, ci = TRUE, 
+       main = paste0(cohort, " cohort")) +
+text(
+  x = 0.5, 
+  y = 4,
+  labels = bquote(lambda == .(format(est.inflation$inflationFactor,digits = 4))),
+  pos = 4
+) +
+text(
+  x = 0.5, 
+  y = 3,
+ labels = bquote(lambda[bacon] == .(format(est.inflation$estimatedInflation,digits = 4))),
+  pos = 4
+)
+qqplot.cohort <- recordPlot()
+
+pdf(paste0("../inflation_factors_results/plots/", analysis, " for ", gender, " in ", cohort, " Cohort.pdf"))
+qqplot.cohort
+dev.off()
+```
+
+### For male
+
+```{R}
+colnames(mtsinai_male_df) <- gsub(
+  "MTSINAI_", "", colnames(mtsinai_male_df)
+)
+mtsinai_male_bacon_df <- estimation_of_inflation(
+  data = mtsinai_male_df, df = 53-4)$data.with.inflation
+colnames(mtsinai_male_bacon_df) <- paste0(
+  "MTSINAI_", colnames(mtsinai_male_bacon_df)
+)
+```
+
+```{R}
+gender <- "Males"
+est.inflation <- estimation_of_inflation(
+  data = mtsinai_male_df, df = 53-4
+)
+res.with.inflation <- est.inflation$data.with.inflation
+
+qqPlot(res.with.inflation$pValue, ci = TRUE, 
+       main = paste0(cohort, " cohort")) +
+text(
+  x = 0.5, 
+  y = 4,
+  labels = bquote(lambda == .(format(est.inflation$inflationFactor,digits = 4))),
+  pos = 4
+) +
+text(
+  x = 0.5, 
+  y = 3,
+ labels = bquote(lambda[bacon] == .(format(est.inflation$estimatedInflation,digits = 4))),
+  pos = 4
+)
+qqplot.cohort <- recordPlot()
+
+pdf(paste0("../inflation_factors_results/plots/", analysis, " for ", gender, " in ", cohort, " Cohort.pdf"))
+qqplot.cohort
+dev.off()
+```
+
+### For stageSex interaction
+
+```{R}
+colnames(mtsinai_stageSexMale_df) <- gsub(
+  "MTSINAI_|stageSexMale_", "", colnames(mtsinai_stageSexMale_df)
+)
+mtsinai_stageSexMale_bacon_df <- estimation_of_inflation(
+  data = mtsinai_stageSexMale_df, df = 141-7)$data.with.inflation
+ncols <- ncol(mtsinai_stageSexMale_bacon_df)
+colnames(mtsinai_stageSexMale_bacon_df)[5:ncols] <- paste0(
+  "stageSexMale_",
+  colnames(mtsinai_stageSexMale_bacon_df)[5:ncols]
+)
+colnames(mtsinai_stageSexMale_bacon_df) <- paste0(
+  "MTSINAI_", 
+  colnames(mtsinai_stageSexMale_bacon_df)
+)
+```
+
+```{R}
+save(
+  mtsinai_female_bacon_df,
+  mtsinai_male_bacon_df,
+  mtsinai_stageSexMale_bacon_df,
+  file = file.path(
+    data.dir.region.pval, "MTSINAI_final_region_based_lm_bacon.rda"
+  )
+)
+```
+
+# Session information
+
+```{R}
+devtools::session_info()
+```

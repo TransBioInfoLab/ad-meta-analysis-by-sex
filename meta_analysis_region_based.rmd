@@ -1,0 +1,654 @@
+---
+title: "Single cpg meta analysis in male"
+author: "Lanyu Zhang, Lissette Gomez, Tiago C. Silva, Lily Wang"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    highlight: kate
+    toc: true
+    number_sections: true
+    df_print: paged
+    code_download: true
+    toc_float:
+      collapsed: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: inline    
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data retrival
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(dplyr)
+library(tidyr)
+```
+
+```{R}
+data.dir <- "../meta_analysis_region_based_results/"
+data.gasparoni <- "../DATASETS/GASPARONI/step12_region_pval/"
+data.london <- "../DATASETS/LONDON/step11_region_pval/"
+data.mtsinai <- "../DATASETS/MtSinai/step11_region_pval/"
+data.rosmap <- "../DATASETS/ROSMAP/step12_region_pval/"
+data.annot <- "../../coMethDMR_metaAnalysis/DATA_annotations/"
+for(p in grep("dir",ls(),value = T)) dir.create(get(p),recursive = TRUE,showWarnings = FALSE)
+```
+
+# Prepare and merge datasets for meta analysis
+
+```{R, include = FALSE}
+load(file.path(data.gasparoni, "GASPARONI_final_region_based_lm_bacon.rda"))
+load(file.path(data.london, "LONDON_final_region_based_lm_bacon.rda"))
+load(file.path(data.mtsinai, "MTSINAI_final_region_based_lm_bacon.rda"))
+load(file.path(data.rosmap, "ROSMAP_final_region_based_lm_bacon.rda"))
+```
+
+```{R}
+preMeta <- function(data){
+  
+  colnames(data)[grep("inputRegion",colnames(data))] <- "inputRegion"
+  
+  ### select the most sig cometh region for each input region
+  pva.col <- grep("_pValue.bacon",colnames(data),value = TRUE)
+  
+  # !! is used to unquote an input 
+  # https://dplyr.tidyverse.org/articles/programming.html
+  data_sig <- data %>%
+    group_by(inputRegion) %>%
+    filter((!!as.symbol(pva.col)) == min(!!as.symbol(pva.col)))
+  
+  data.frame(data_sig, stringsAsFactors = FALSE)
+}
+```
+
+## For female
+
+```{R}
+gasparoni_female <- preMeta(data = gasparoni_female_bacon_df)
+london_female <- preMeta(data = london_female_bacon_df)
+mtsinai_female <- preMeta(data = mtsinai_female_bacon_df)
+rosmap_female <- preMeta(data = rosmap_female_bacon_df)
+
+cohort_ls <- list(
+  GASPARONI = gasparoni_female,
+  LONDON = london_female,
+  MTSINAI = mtsinai_female,
+  ROSMAP = rosmap_female
+)
+
+### outer join input region
+female_multi_cohorts <- Reduce(
+  function(x,y, ...) merge(x, y, by = "inputRegion", all = TRUE, ...),
+  cohort_ls
+)
+# dim(female_multi_cohorts)
+```
+
+## For male
+
+```{R}
+gasparoni_male <- preMeta(data = gasparoni_male_bacon_df)
+london_male <- preMeta(data = london_male_bacon_df)
+mtsinai_male <- preMeta(data = mtsinai_male_bacon_df)
+rosmap_male <- preMeta(data = rosmap_male_bacon_df)
+
+cohort_ls <- list(
+  GASPARONI = gasparoni_male,
+  LONDON = london_male,
+  MTSINAI = mtsinai_male,
+  ROSMAP = rosmap_male
+)
+
+### outer join input region
+male_multi_cohorts <- Reduce(
+  function(x,y, ...) merge(x, y, by = "inputRegion", all = TRUE, ...),
+  cohort_ls
+)
+# dim(male_multi_cohorts)
+```
+
+## For stageSex intersection
+
+```{R}
+gasparoni_intxn <- preMeta(data = gasparoni_stageSexMale_bacon_df)
+london_intxn <- preMeta(data = london_stageSexMale_bacon_df)
+mtsinai_intxn <- preMeta(data = mtsinai_stageSexMale_bacon_df)
+rosmap_intxn <- preMeta(data = rosmap_stageSexMale_bacon_df)
+
+cohort_ls <- list(
+  GASPARONI = gasparoni_intxn,
+  LONDON = london_intxn,
+  MTSINAI = mtsinai_intxn,
+  ROSMAP = rosmap_intxn
+)
+
+### outer join input region
+intxn_multi_cohorts <- Reduce(
+  function(x,y, ...) merge(x, y, by = "inputRegion", all = TRUE, ...),
+  cohort_ls
+)
+# dim(intxn_multi_cohorts)
+```
+
+# Meta analysis
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(dplyr)
+library(meta)
+library(doParallel)
+```
+
+## Create a function for meta analysis
+
+```{R}
+metaAnalysis <- function(data,
+                         parallel = FALSE,
+                         estimate = "Estimate",
+                         std = "StdErr"){
+  
+  meta_df <- plyr::adply(
+    .data = data, .margins = 1, .fun =  function(rowOne_df){
+      
+      est <- rowOne_df[grep(estimate, colnames(rowOne_df))] %>% as.numeric
+      
+      direction <-  paste(
+        ifelse(is.na(est), ".", ifelse(est > 0, "+", "-")), collapse = "")
+      
+      se <- rowOne_df[grep(std, colnames(rowOne_df))] %>% as.numeric
+      
+      cohort <- gsub(paste0("_", std),"",grep(std,colnames(rowOne_df),value = T))
+      
+      rowOne_reform_df <- data.frame(
+        cohort = cohort,
+        est = est,
+        se = se,
+        stringsAsFactors = FALSE)
+      
+      f <- metagen(
+        TE = est,
+        seTE = se,
+        data = rowOne_reform_df)
+      
+      tibble::tibble(
+        inputRegion = rowOne_df$inputRegion,
+        estimate = f$TE.fixed,
+        se = f$seTE.fixed,
+        pVal.fixed = f$pval.fixed,
+        pVal.random = f$pval.random,
+        pValQ = f$pval.Q,
+        direction = direction)},
+    
+    .progress = "time",
+    .parallel = parallel,
+    .id = NULL)
+  
+  ### create final pVal
+  meta_df$pVal.final <- ifelse(
+    meta_df$pValQ > 0.05, meta_df$pVal.fixed, meta_df$pVal.random)
+
+  ### calculate fdr
+  meta_df$fdr <- p.adjust(meta_df$pVal.final, method = "fdr")
+
+  ### order meta_df
+  meta_final_df <- meta_df[
+    , c(grep("_",colnames(meta_df),invert = T),
+        grep("_",colnames(meta_df),invert = F))]
+
+  meta_final_df <- meta_final_df[order(meta_final_df$pVal.final),]
+  
+  row.names(meta_final_df) <- NULL
+  
+  meta_final_df
+}
+```
+
+## For female
+
+```{R, eval = FALSE}
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+female_meta_bacon_df <- metaAnalysis(
+  data = female_multi_cohorts,
+  parallel = TRUE,
+  estimate = "Estimate.bacon",
+  std = "StdErr.bacon"
+)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  female_meta_bacon_df,
+  file = file.path(data.dir, "region_based_female_meta_bacon_df.rda")
+)
+```
+
+## For male
+
+```{R, eval = FALSE}
+doParallel::registerDoParallel(cores = parallel::detectCores()/2)
+male_meta_bacon_df <- metaAnalysis(
+  data = male_multi_cohorts,
+  parallel = TRUE,
+  estimate = "Estimate.bacon",
+  std = "StdErr.bacon"
+)
+```
+
+```{R, include = FALSE, eval = FALSE}
+save(
+  male_meta_bacon_df,
+  file = file.path(data.dir, "region_based_male_meta_bacon_df.rda")
+)
+```
+
+## For stageSex interaction
+
+```{R, eval = FALSE}
+doParallel::registerDoParallel(detectCores()/2)
+intxn_meta_bacon_df <- metaAnalysis(
+  data = intxn_multi_cohorts,
+  parallel = TRUE,
+  estimate = "stageSexMale_Estimate.bacon",
+  std = "stageSexMale_StdErr.bacon"
+)
+```
+
+```{R}
+save(
+  intxn_meta_bacon_df,
+  file = file.path(data.dir, "region_based_stageSexMale_meta_bacon_df.rda")
+)
+```
+
+# StageR analysis
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(stageR)
+```
+
+```{R}
+load(file.path(data.dir, "region_based_female_meta_bacon_df.rda"))
+load(file.path(data.dir, "region_based_male_meta_bacon_df.rda"))
+load(file.path(data.dir, "region_based_stageSexMale_meta_bacon_df.rda"))
+```
+
+```{R}
+# 1. Set pScreen
+pvalueFinal <- merge(
+  male_meta_bacon_df[, c("inputRegion", "pVal.final")],
+  female_meta_bacon_df[, c("inputRegion", "pVal.final"),],
+  by = "inputRegion"
+)
+colnames(pvalueFinal) <- c("inputRegion", "pvalMale", "pvalFemale")
+pScreen <- pmin(pvalueFinal$pvalMale, pvalueFinal$pvalFemale)
+
+# 2. Set pConfirmation
+pConfirmation <- merge(
+  pvalueFinal,
+  intxn_meta_bacon_df[, c("inputRegion", "pVal.final")],
+  by = "inputRegion"
+)
+colnames(pConfirmation)[4] <- "pvalStageSex"
+rownames(pConfirmation) <- pConfirmation$inputRegion
+pConfirmation <- as.matrix(pConfirmation[,-1])
+# identical(rownames(pConfirmation), pvalueFinal$inputRegion)
+
+# 3. stageR analysis
+stageRObj <- stageR(
+  pScreen = pScreen,
+  pConfirmation = pConfirmation,
+  pScreenAdjusted = FALSE
+)
+
+stageRObj <- stageWiseAdjustment(
+  object = stageRObj,
+  method = "none",
+  alpha = 0.05,
+  allowNA = TRUE
+)
+
+stage.results <- getAdjustedPValues(
+  stageRObj,
+  onlySignificantGenes = TRUE,
+  order=TRUE
+)
+
+# 4. Organize and Merge final results
+metaF <- female_meta_bacon_df[, c(1:3,7)]
+colnames(metaF) <- c("inputRegion", paste0("metaBaconF_", colnames(metaF)[-1]))
+
+metaM <- male_meta_bacon_df[, c(1:3,7)]
+colnames(metaM) <- c("inputRegion", paste0("metaBaconM_", colnames(metaM)[-1]))
+
+metaInt <- intxn_meta_bacon_df[, c(1:3,7)]
+colnames(metaInt) <- c("inputRegion", paste0("metaBaconInt_", colnames(metaInt)[-1]))
+
+sexMeta_ls <- list(
+  female = metaF,
+  male = metaM,
+  stageSex = metaInt
+)
+
+meta_multi_sex <- Reduce(
+  function(x,y, ...) merge(x, y, by = "inputRegion", all = TRUE, ...),
+  sexMeta_ls
+)
+
+stageMetaResults <- merge(
+  stage.results,
+  meta_multi_sex,
+  by.x = "row.names",
+  by.y = "inputRegion"
+)
+colnames(stageMetaResults)[1] <- "inputRegion"
+
+stageMetaResults <- stageMetaResults %>%
+  select(
+    inputRegion, padjScreen,
+    metaBaconF_estimate, metaBaconF_se, metaBaconF_direction, pvalFemale,
+    metaBaconM_estimate, metaBaconM_se, metaBaconM_direction, pvalMale,
+    metaBaconInt_estimate, metaBaconInt_se, metaBaconInt_direction, pvalStageSex
+  )
+```
+
+```{R}
+write.csv(
+  stageMetaResults,
+  file.path(data.dir, "stageR_region_based_bacon_meta_results.csv"),
+  row.names = FALSE
+)
+```
+
+# Add annotation
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(coMethDMR)
+library(doParallel)
+```
+
+```{R, include = FALSE}
+load(file.path(data.dir, "region_based_female_meta_bacon_df.rda"))
+load(file.path(data.dir, "region_based_male_meta_bacon_df.rda"))
+load(file.path(data.dir, "region_based_stageSexMale_meta_bacon_df.rda"))
+```
+
+## For female
+
+```{R}
+female_meta_final_df <- female_meta_bacon_df %>% 
+  tidyr::separate(
+    col = inputRegion,
+    into =  c("chrom", "start", "end"),
+    remove = FALSE
+  )
+female_meta_annot_df <- AnnotateResults(
+  female_meta_final_df,
+  nCores_int = detectCores()/2
+) 
+
+### order vars
+orderCol1 <- c(1:4, 57:60, 5:12)
+orderCol2 <- grep(
+  "GASPARONI|LONDON|MTSINAI|ROSMAP",
+  colnames(female_meta_annot_df),
+  invert = FALSE)
+female_meta_annot_df <- female_meta_annot_df[,c(orderCol1, orderCol2)]
+```
+
+```{R, include = FALSE, eval = FALSE}
+write.csv(
+  female_meta_annot_df,
+  file.path(data.dir, "region_based_female_meta_bacon_annot_df.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  female_meta_annot_df %>% filter(fdr < 0.05),
+  file.path(data.dir, "region_based_female_meta_bacon_annot_sig_df.csv"),
+  row.names = FALSE
+)
+
+```
+
+## For male
+
+```{R}
+male_meta_final_df <- male_meta_bacon_df %>% 
+  tidyr::separate(
+    col = inputRegion,
+    into =  c("chrom", "start", "end"),
+    remove = FALSE)
+male_meta_annot_df <- AnnotateResults(
+  male_meta_final_df,
+  nCores_int = detectCores()/2) 
+
+### order vars
+orderCol1 <- c(1:4, 57:60, 5:12)
+orderCol2 <- grep(
+  "GASPARONI|LONDON|MTSINAI|ROSMAP",
+  colnames(male_meta_annot_df),
+  invert = FALSE)
+male_meta_annot_df <- male_meta_annot_df[,c(orderCol1, orderCol2)]
+```
+
+```{R, include = FALSE, eval = FALSE}
+write.csv(
+  male_meta_annot_df,
+  file.path(data.dir, "region_based_male_meta_bacon_annot_df.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  male_meta_annot_df %>% filter(fdr < 0.05),
+  file.path(data.dir, "region_based_male_meta_bacon_annot_sig_df.csv"),
+  row.names = FALSE
+)
+```
+
+## For stageSex interaction
+
+```{R}
+intxn_meta_final_df <- intxn_meta_bacon_df %>% 
+  tidyr::separate(
+    col = inputRegion,
+    into =  c("chrom", "start", "end"),
+    remove = FALSE)
+intxn_meta_annot_df <- AnnotateResults(
+  intxn_meta_final_df,
+  nCores_int = detectCores()/2) 
+
+### order vars
+orderCol1 <- c(1:4, 53:56, 5:12)
+orderCol2 <- grep(
+  "GASPARONI|LONDON|MTSINAI|ROSMAP",
+  colnames(intxn_meta_annot_df),
+  invert = FALSE)
+intxn_meta_annot_df <- intxn_meta_annot_df[,c(orderCol1, orderCol2)]
+```
+
+```{R, include = FALSE, eval = FALSE}
+write.csv(
+  intxn_meta_annot_df,
+  file.path(data.dir, "region_based_stageSexMale_meta_bacon_annot_df.csv"),
+  row.names = FALSE
+)
+```
+
+## Add GREAT annotation
+
+```{R, message = FALSE, results = "hide"}
+library(rGREAT)
+library(dplyr)
+```
+
+```{R}
+addGREAT <- function(dat){
+  job_regions <- submitGreatJob(
+    gr = dat[, c("chrom", "start", "end")],
+    species = "hg19" # or "hg38".
+  )
+  
+  regionsToGenes <- data.frame(plotRegionGeneAssociationGraphs(job_regions))
+  regionsToGenes$GREAT_annotation <- ifelse(
+    regionsToGenes$distTSS > 0,
+    paste0(regionsToGenes$gene, "(+", regionsToGenes$distTSS, ")"),
+    paste0(regionsToGenes$gene, "(", regionsToGenes$distTSS, ")")
+  )
+  
+  regionsToGenes <- regionsToGenes[
+    ,c("seqnames", "start", "end", "GREAT_annotation")
+  ]
+  
+  great <- group_by(regionsToGenes, seqnames, start, end) %>%
+    summarise_each(funs(paste(., collapse = "; ")))
+  
+  great_df <- as.data.frame(great)
+  colnames(great_df)[1] <- "chrom"
+  
+  merge(dat, great_df, by = c("chrom", "start", "end"))
+}
+```
+
+```{R}
+female_sig <- read.csv(
+  file.path(data.dir, "region_based_female_meta_bacon_annot_sig_df.csv")
+)
+female_sig_great <- addGREAT(female_sig)
+
+male_sig <- read.csv(
+  file.path(data.dir, "region_based_male_meta_bacon_annot_sig_df.csv")
+)
+male_sig_great <- addGREAT(male_sig)
+```
+
+```{R}
+female_all <- read.csv(
+  file.path(data.dir, "region_based_female_meta_bacon_annot_df.csv")
+)
+female_all_great <- addGREAT(female_all)
+
+male_all <- read.csv(
+  file.path(data.dir, "region_based_male_meta_bacon_annot_df.csv")
+)
+male_all_great <- addGREAT(male_all)
+```
+
+## Add chromatin states
+
+```{R, message = FALSE, results = "hide"}
+library(GenomicRanges)
+```
+
+```{R}
+ChmmModels <- readr::read_tsv("https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/final/E073_15_coreMarks_segments.bed",col_names = FALSE)
+colnames(ChmmModels) <- c("chr","start","end","state")
+states <- readr::read_csv(
+  "../../coMethDMR_metaAnalysis/DNAm_RNA/data/chromHMM_labels.csv",
+  col_names = FALSE
+)
+states$X1 <- paste0("E",states$X1)  
+ChmmModels$state <- states$X3[match(ChmmModels$state,states$X1)]
+ChmmModels.gr <- makeGRangesFromDataFrame(ChmmModels,keep.extra.columns = TRUE)
+
+addState <- function(dat_great){
+  dat.gr <- dat_great %>% makeGRangesFromDataFrame()
+  hits <- as.data.frame(findOverlaps(dat.gr,ChmmModels.gr))
+  
+  col.name <- names(values(ChmmModels.gr))[1]
+  chrom <- as.data.frame(ChmmModels.gr)
+  annot <- data.frame(
+    "inputRegion" = dat_great$inputRegion[hits$queryHits],
+    "annot" = chrom$state[hits$subjectHits],
+    "annot_start" = chrom$start[hits$subjectHits],
+    "annot_end" = chrom$end[hits$subjectHits],
+    stringsAsFactors = FALSE
+  )
+  
+  annot$annotRegion <- paste0(annot$annot_start, "-", annot$annot_end)
+  annot <- annot[, c(1,2,5)]
+  
+  annotByInputRegion <- group_by(annot, inputRegion) %>%
+    summarise_each(funs(paste(., collapse = ";")))
+  
+  annotByInputRegion <- as.data.frame(annotByInputRegion)
+  
+  annotByInputRegion <- annotByInputRegion %>%
+    select(inputRegion, annot) %>%
+    dplyr::rename(state = annot)
+  
+  merge(dat_great, annotByInputRegion, by = c("inputRegion"))
+}
+```
+
+```{R}
+female_sig_great_state <- addState(female_sig_great)
+female_sig_great_state_ordered <- female_sig_great_state[
+  , c(1:8, 61:62, 9:60)
+]
+
+male_sig_great_state <- addState(male_sig_great)
+male_sig_great_state_ordered <- male_sig_great_state[
+  , c(1:8, 61:62, 9:60)
+]
+```
+
+```{R}
+write.csv(
+  female_sig_great_state_ordered,
+  file.path(
+    data.dir, 
+    "region_based_female_meta_bacon_annot_sig_great_state_df.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  male_sig_great_state_ordered,
+  file.path(
+    data.dir, 
+    "region_based_male_meta_bacon_annot_sig_great_state_df.csv"
+  ),
+  row.names = FALSE
+)
+```
+
+```{R}
+female_all_great_state <- addState(female_all_great)
+female_all_great_state_ordered <- female_all_great_state[
+  , c(1:8, 61:62, 9:60)
+]
+
+male_all_great_state <- addState(male_all_great)
+male_all_great_state_ordered <- male_all_great_state[
+  , c(1:8, 61:62, 9:60)
+]
+```
+
+```{R}
+write.csv(
+  female_all_great_state_ordered,
+  file.path(
+    data.dir, 
+    "region_based_female_meta_bacon_annot_great_state_df.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  male_all_great_state_ordered,
+  file.path(
+    data.dir, 
+    "region_based_male_meta_bacon_annot_great_state_df.csv"
+  ),
+  row.names = FALSE
+)
+```
+
+# Session information
+
+```{R}
+devtools::session_info()
+```

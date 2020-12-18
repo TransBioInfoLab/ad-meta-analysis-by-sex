@@ -1,0 +1,1396 @@
+---
+title: "Enrichment analysis"
+author: "Lanyu Zhang, Lissette Gomez, Tiago C. Silva, Lily Wang"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    number_sections: true
+    df_print: paged
+    code_download: true
+    toc_float:
+      collapsed: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: inline    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,fig.width = 10,fig.height = 10)
+```
+
+# Main libraries and configuration
+
+```{R, message = FALSE, results = 'hide'}
+library(dplyr)
+library(ExperimentHub)
+library(GenomicRanges)
+library(coMethDMR)
+library(ggplot2)
+# devtools::load_all("~/Dropbox (BBSR)/PanCancer/MethReg/")
+```
+
+```{R}
+dir.result <- "../enrichment_analysis_results"
+dir.result.region <- "../meta_analysis_region_based_results"
+dir.result.cpg <- "../meta_analysis_single_cpg_results"
+data.annot <- "../../coMethDMR_metaAnalysis/DATA_annotations/"
+```
+
+# Enrichment analysis
+
+## Generate datasets
+
+### For female
+
+#### For regions
+
+```{R}
+### Call in datasets
+female_sig <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_female_meta_bacon_annot_sig_df.csv"
+  )
+)
+female_sig_pos_est <- female_sig %>% dplyr::filter(estimate > 0)
+female_sig_neg_est <- female_sig %>% dplyr::filter(estimate < 0)
+
+female_all <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_female_meta_bacon_annot_df.csv"
+  )
+)
+```
+
+```{R}
+probes.cluster.gene <- readRDS(
+  "../cpgList_3_200_withChrX/Gene_3_200_withChrX.RDS"
+)
+probes.cluster.intergene <- readRDS(
+  "../cpgList_3_200_withChrX/InterGene_3_200_withChrX.RDS"
+)
+probes.cluster.all <- c(
+  probes.cluster.gene, probes.cluster.intergene
+)
+
+# get all cpg in meta_sig_pos input regions
+idx <- names(probes.cluster.all) %in% female_sig_pos_est$inputRegion
+
+female_sig_probes_pos_est <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(female_sig_probes_pos_est)
+
+# get all cpg in meta_sig_neg input regions
+idx <- names(probes.cluster.all) %in% female_sig_neg_est$inputRegion
+
+female_sig_probes_neg_est <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(female_sig_probes_neg_est)
+
+# get all cpg in meta_all input regions
+idx <- names(probes.cluster.all) %in% female_all$inputRegion
+
+female_all_probes <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(female_all_probes)
+```
+
+#### For single cpgs
+
+```{R}
+female.single.cpg.results <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_female_meta_bacon_annot_df.csv"),
+  col_types = readr::cols()
+)
+female.single.cpg.sig.results <- readr::read_csv(                                                file.path(dir.result.cpg, "single_cpg_female_meta_bacon_annot_sig_df.csv"),
+  col_types = readr::cols()
+)                                                                                                 
+### Foreground
+female.foreground.probes <- female.single.cpg.sig.results %>% 
+  pull(cpg) %>% as.character
+female.foreground.probes.neg.est <- female.single.cpg.sig.results %>% 
+  filter(estimate < 0) %>% pull(cpg) %>% as.character
+female.foreground.probes.pos.est <- female.single.cpg.sig.results  %>% 
+  filter(estimate > 0) %>% pull(cpg) %>% as.character
+length(female.foreground.probes)
+length(female.foreground.probes.neg.est)
+length(female.foreground.probes.pos.est)
+
+### Background
+female.background.probes <- female.single.cpg.results  %>% 
+  pull(cpg) %>% as.character 
+length(female.background.probes)
+```
+
+### For male
+
+#### For regions
+
+```{R}
+### Call in datasets
+male_sig <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_male_meta_bacon_annot_sig_df.csv"
+  )
+)
+male_sig_pos_est <- male_sig %>% dplyr::filter(estimate > 0)
+male_sig_neg_est <- male_sig %>% dplyr::filter(estimate < 0)
+
+male_all <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_male_meta_bacon_annot_df.csv"
+  )
+)
+```
+
+```{R}
+probes.cluster.gene <- readRDS(
+  "../cpgList_3_200_withChrX/Gene_3_200_withChrX.RDS"
+)
+probes.cluster.intergene <- readRDS(
+  "../cpgList_3_200_withChrX/InterGene_3_200_withChrX.RDS"
+)
+probes.cluster.all <- c(
+  probes.cluster.gene, probes.cluster.intergene
+)
+
+# get all cpg in meta_sig_pos input regions
+idx <- names(probes.cluster.all) %in% male_sig_pos_est$inputRegion
+
+male_sig_probes_pos_est <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(male_sig_probes_pos_est)
+
+# get all cpg in meta_sig_neg input regions
+idx <- names(probes.cluster.all) %in% male_sig_neg_est$inputRegion
+
+male_sig_probes_neg_est <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(male_sig_probes_neg_est)
+
+# get all cpg in meta_all input regions
+idx <- names(probes.cluster.all) %in% male_all$inputRegion
+
+male_all_probes <- probes.cluster.all[idx] %>%
+  unlist %>%
+  as.character() %>%
+  unique
+length(male_all_probes)
+```
+
+#### For single cpgs
+
+```{R}
+male.single.cpg.results <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_male_meta_bacon_annot_df.csv"),
+  col_types = readr::cols()
+)
+male.single.cpg.sig.results <- readr::read_csv(                                                file.path(dir.result.cpg, "single_cpg_male_meta_bacon_annot_sig_df.csv"),
+  col_types = readr::cols()
+)                                                                                                 
+### Foreground
+male.foreground.probes <- male.single.cpg.sig.results %>% 
+  pull(cpg) %>% as.character
+male.foreground.probes.neg.est <- male.single.cpg.sig.results %>% 
+  filter(estimate < 0) %>% pull(cpg) %>% as.character
+male.foreground.probes.pos.est <- male.single.cpg.sig.results %>% 
+  filter(estimate > 0) %>% pull(cpg) %>% as.character
+length(male.foreground.probes)
+length(male.foreground.probes.neg.est)
+length(male.foreground.probes.pos.est)
+
+### Background
+male.background.probes <- male.single.cpg.results %>% 
+  pull(cpg) %>% as.character 
+length(male.background.probes)
+```
+
+## Enrichment plots and tables for single cpgs + cpgs in dmrs
+
+```{R}
+devtools::source_gist("https://gist.github.com/Jennyzly2016/f5f39c49c8e2354261bbfa8f661eb088")
+```
+
+```{R}
+combine.background.probes <- c(female_all_probes, female.background.probes) %>% unique()
+combine.female.pos <- c(female_sig_probes_pos_est, female.foreground.probes.pos.est) %>% unique()
+combine.female.neg <- c(female_sig_probes_neg_est, female.foreground.probes.neg.est) %>% unique()
+combine.male.pos <- c(male_sig_probes_pos_est, male.foreground.probes.pos.est) %>% unique()
+combine.male.neg <- c(male_sig_probes_neg_est, male.foreground.probes.neg.est) %>% unique()
+```
+
+### Genomic features
+
+#### Generate enrichment plots
+
+```{R}
+pos.all.plot <- cpGsGenomicFeatures(
+  list(
+    "All probes (n = 464371)" = combine.background.probes,
+    "Significant w/ Positive estimate in female (n = 451)" = combine.female.pos,
+    "Significant w/ Positive estimate in male (n = 218)" = combine.male.pos
+  ),
+  bar.colors = c("#999999", "#D55E00", "#0072B2")
+)
+pos.all.plot <- pos.all.plot$plot + 
+  ggtitle("Meta-analysis positive probes") 
+pos.all.plot
+ggsave(
+  plot = pos.all.plot,
+  width = 10, height = 5, 
+  filename = file.path(
+    dir.result, "enrichment_meta_analysis_enrichment_positive.pdf"
+  )
+)
+
+neg.all.plot <- cpGsGenomicFeatures(
+  list(
+    "All probes (n = 464371)" = combine.background.probes,
+    "Significant w/ Negative estimate in female (n = 250)" = combine.female.neg,
+    "Significant w/ Negative estimate in male (n = 41)" = combine.male.neg
+  ),
+  bar.colors = c("#999999", "#E69F00", "#56B4E9")
+)
+neg.all.plot <- neg.all.plot$plot + 
+  ggtitle("Meta-analysis negative probes") 
+neg.all.plot
+ggsave(
+  plot = neg.all.plot,
+  width = 10, height = 5, 
+  filename = file.path(
+    dir.result, "enrichment_meta_analysis_enrichment_negative.pdf"
+  )
+)
+```
+
+#### Generate enrichment tables
+
+##### For CpG islands
+
+###### females vs. background
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.background.probes,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.background.probes,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hyper
+
+tab.island.female <- cbind(
+   data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("Relation_to_Island",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+###### males vs. background
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.male.neg,
+  bg.probes = combine.background.probes,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.male.pos,
+  bg.probes = combine.background.probes,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hyper
+
+tab.island.male <- cbind(
+   data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("Relation_to_Island",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+###### females vs. males
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.male.neg,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg)),
+  bg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.male.pos,
+  enrichment.type = "island",
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos)),
+  bg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos))
+)
+# plot.chrm.hyper
+
+tab.island.FvsM <- cbind(
+   data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("Relation_to_Island",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+##### For Gene regions
+
+###### females vs. background
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.background.probes,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.background.probes,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hyper
+
+tab.gene.female <- cbind(
+ data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("UCSC_RefGene_Group_hierarchy",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+###### males vs. background
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.male.neg,
+  bg.probes = combine.background.probes,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.male.pos,
+  bg.probes = combine.background.probes,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos)),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes))
+)
+# plot.chrm.hyper
+
+tab.gene.male <- cbind(
+ data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("UCSC_RefGene_Group_hierarchy",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+###### females vs. males
+
+```{R, message = FALSE, echo = FALSE}
+plot.chrm.hypo <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.male.neg,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg)),
+  bg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg))
+)
+# plot.chrm.hypo
+
+plot.chrm.hyper <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.male.pos,
+  enrichment.type = "gene",
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos)),
+  bg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos))
+)
+# plot.chrm.hyper
+
+tab.gene.FvsM <- cbind(
+ data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("UCSC_RefGene_Group_hierarchy",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+### Chromotin state
+
+#### Generate enrichment plots
+
+```{R}
+file <- paste0("https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations",
+               "/ChmmModels/coreMarks/jointModel/final/E073_15_coreMarks_segments.bed")
+ChmmModels <- readr::read_tsv(
+  file,
+  col_names = FALSE,
+  col_types = readr::cols()
+)
+colnames(ChmmModels) <- c("chr","start","end","state")
+states <- readr::read_csv(
+  "../../coMethDMR_metaAnalysis/DNAm_RNA/data/chromHMM_labels.csv",
+  col_names = FALSE,
+  col_types = readr::cols()
+)
+states$X1 <- paste0("E",states$X1)
+ChmmModels$state <- states$X3[match(ChmmModels$state,states$X1)]
+ChmmModels.gr <- makeGRangesFromDataFrame(ChmmModels,keep.extra.columns = TRUE)
+```
+
+```{R}
+pos.single.cpg.plot <- cpGsGenomicFeatures(
+  list(
+    "All probes (n = 464371)" = combine.background.probes,
+    "Significant w/ Positive estimate in female (n = 451)" = combine.female.pos,
+    "Significant w/ Positive estimate in male (n = 218)" = combine.male.pos
+  ),
+  bar.colors = c("#999999", "#D55E00", "#0072B2"),
+  annotation.gr = ChmmModels.gr,
+  plot.width = 10,
+  plot.height = 5,
+  plot.title = "Meta-analysis positive probes\nChroMHMM: E073 - 15 coreMarks segments",
+  enrichment.type = "customized",
+  plot.filename = file.path(
+    dir.result, "enrichment_meta_analysis_chromHMM_states_positive.pdf"
+  )
+)
+pos.single.cpg.plot$plot
+
+neg.single.cpg.plot <- cpGsGenomicFeatures(
+  list(
+    "All probes (n = 464371)" = combine.background.probes,
+    "Significant w/ Negative estimate in female (n = 250)" = combine.female.neg,
+    "Significant w/ Negative estimate in male (n = 41)" = combine.male.neg
+  ),
+  bar.colors = c("#999999", "#E69F00", "#56B4E9"),
+  annotation.gr = ChmmModels.gr,
+  plot.width = 10,
+  plot.height = 5,
+  plot.title = "Meta-analysis negative probes\nChroMHMM: E073 - 15 coreMarks segments",
+  enrichment.type = "customized",
+  plot.filename = file.path(
+    dir.result, "enrichment_meta_analysis_chromHMM_states_negative.pdf"
+  )
+)
+neg.single.cpg.plot$plot
+```
+
+#### Generate enrichment tables
+
+##### females vs. background
+
+```{R}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.background.probes,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg),")"),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hypo$plot
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.background.probes,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos),")"),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hyper$plot
+
+tab.chrm.female <- cbind(
+  data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("ChroMHMM: E073",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+##### males vs. background
+
+```{R}
+plot.chrm.hypo <- cpGsEnrichment(
+  fg.probes = combine.male.neg,
+  bg.probes = combine.background.probes,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg),")"),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hypo$plot
+
+plot.chrm.hyper <- cpGsEnrichment(
+  fg.probes = combine.male.pos,
+  bg.probes = combine.background.probes,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos),")"),
+  bg.label = paste0("Evaluated probes (n = ",
+                    length(combine.background.probes),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hyper$plot
+
+tab.chrm.male <- cbind(
+  data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("ChroMHMM: E073",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+##### females vs. males
+
+```{R}
+plot.chrm.hypo <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.neg,
+  bg.probes = combine.male.neg,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Negative estimate in female (n = ",
+                    length(combine.female.neg),")"),
+  bg.label = paste0("Significant probes w/ Negative estimate in male (n = ",
+                    length(combine.male.neg),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hypo$plot
+
+plot.chrm.hyper <- cpGsEnrichment_FvsM(
+  fg.probes = combine.female.pos,
+  bg.probes = combine.male.pos,
+  annotation.gr = ChmmModels.gr,
+  fg.label = paste0("Significant probes w/ Positive estimate in female (n = ",
+                    length(combine.female.pos),")"),
+  bg.label = paste0("Significant probes w/ Positive estimate in male (n = ",
+                    length(combine.male.pos),")"),
+  enrichment.type = "customized",
+  save.plot = FALSE
+)
+#plot.chrm.hyper$plot
+
+tab.chrm.FvsM <- cbind(
+  data.frame(
+    "Meta-Analysis" = c(
+      rep("Single CpGs + CpGs in DMRs",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    ),
+    "Foreground probes" = c(
+      rep("Significant probes w/ Positive estimate",nrow(plot.chrm.hyper$table)),
+      rep("Significant probes w/ Negative estimate",nrow(plot.chrm.hypo$table))
+    ),
+    "Enrichment analysis" = c(
+      rep("ChroMHMM: E073",nrow(plot.chrm.hyper$table) + nrow(plot.chrm.hypo$table))
+    )
+  ),
+  rbind(plot.chrm.hyper$table,
+        plot.chrm.hypo$table)
+)
+```
+
+### Combine and create final enrichment tables
+
+```{R include = FALSE}
+colnames(tab.gene.female)[4] <- colnames(tab.chrm.female)[4] <- colnames(tab.island.female)[4]  <- "Variable"
+tab.female <- tab.gene.female %>% rbind(tab.island.female) %>% rbind(tab.chrm.female)
+colnames(tab.female)[5:ncol(tab.female)] <- paste0(
+  "female_",colnames(tab.female)[5:ncol(tab.female)])
+
+write.csv(
+  tab.female,
+  file.path(dir.result, "enrichment_table_female.csv"),
+  row.names = FALSE
+)
+```
+
+```{R include = FALSE}
+colnames(tab.gene.male)[4] <- colnames(tab.chrm.male)[4] <- colnames(tab.island.male)[4]  <- "Variable"
+tab.male <- tab.gene.male %>% rbind(tab.island.male) %>% rbind(tab.chrm.male)
+colnames(tab.male)[5:ncol(tab.male)] <- paste0(
+  "male_",colnames(tab.male)[5:ncol(tab.male)])
+
+write.csv(
+  tab.male,
+  file.path(dir.result, "enrichment_table_male.csv"),
+  row.names = FALSE
+)
+```
+
+```{R include = FALSE}
+colnames(tab.gene.FvsM)[4] <- colnames(tab.chrm.FvsM)[4] <- colnames(tab.island.FvsM)[4]  <- "Variable"
+tab.FvsM <- tab.gene.FvsM %>% rbind(tab.island.FvsM) %>% rbind(tab.chrm.FvsM)
+colnames(tab.FvsM)[5:ncol(tab.FvsM)] <- paste0(
+  "FvsM_",colnames(tab.FvsM)[5:ncol(tab.FvsM)])
+
+write.csv(
+  tab.FvsM,
+  file.path(dir.result, "enrichment_table_FvsM.csv"),
+  row.names = FALSE
+)
+```
+
+# Prepare datasets for pathway analysis with GSEA
+
+```{R, message = FALSE, results = 'hide'}
+library(gam)
+```
+
+## For female
+
+### Prepare dataset for single cpg analysis
+
+```{R}
+cpg_all <- readr::read_csv(
+  file.path(
+    dir.result.cpg, 
+    "single_cpg_female_meta_bacon_annot_great_state_df.csv"
+  ),
+  col_types = readr::cols()
+) %>%
+  filter(!is.na(pVal.final)) %>%
+  dplyr::mutate(`-log10pVal.final` = -log10(pVal.final)) %>% 
+  select(cpg, GREAT_annotation, `-log10pVal.final`, pVal.final)
+```
+
+### Prepare dataset for region based analysis
+
+```{R}
+region_all <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_female_meta_bacon_annot_df.csv"
+  )
+) %>%
+  filter(!is.na(pVal.final)) %>%
+  dplyr::mutate(`-log10pVal.final` = -log10(pVal.final)) %>% 
+  select(inputRegion, `-log10pVal.final`, pVal.final)
+```
+
+#### Extract cpgs from each inputRegion
+
+```{R}
+probes.cluster.gene <- readRDS(
+  "../cpgList_3_200_withChrX/Gene_3_200_withChrX.RDS"
+)
+probes.cluster.intergene <- readRDS(
+  "../cpgList_3_200_withChrX/InterGene_3_200_withChrX.RDS"
+)
+probes.cluster.all <- c(
+  probes.cluster.gene, probes.cluster.intergene
+)
+
+idx <- names(probes.cluster.all) %in% region_all$inputRegion
+
+region_all$cpg <- plyr::laply(probes.cluster.all[idx], function(term){
+  paste(term, collapse = ";")
+})
+
+region_all <- region_all %>%
+  select(cpg, pVal.final, `-log10pVal.final`) %>%
+  tidyr::separate_rows(cpg, sep = ";")
+```
+
+#### Annotate cpgs
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(sesame)
+library(rGREAT)
+library(dplyr)
+```
+
+```{R}
+probes.info <- sesameDataGet("HM450.hg19.manifest") %>% as.data.frame()
+
+probes.info <- probes.info[, c("seqnames", "start", "end")]
+colnames(probes.info)[1] <- "chr"
+probes.info$chr <- as.character(probes.info$chr)
+
+### add chrom and position
+region_all_annot <- merge(
+  probes.info, region_all, by.x = "row.names", by.y = "cpg", sort = FALSE
+)
+colnames(region_all_annot)[1] <- "cpg"
+region_all_annot$cpg <- as.character(region_all_annot$cpg)
+```
+
+```{R}
+job_regions <- submitGreatJob(
+  gr = region_all_annot[, c("chr", "start", "end")],
+  species = "hg19" # or "hg38".
+)
+  
+regionsToGenes <- data.frame(plotRegionGeneAssociationGraphs(job_regions))
+regionsToGenes$GREAT_annotation <- ifelse(
+  regionsToGenes$distTSS > 0,
+  paste0(regionsToGenes$gene, "(+", regionsToGenes$distTSS, ")"),
+  paste0(regionsToGenes$gene, "(", regionsToGenes$distTSS, ")")
+)
+  
+regionsToGenes <- regionsToGenes[
+  ,c("seqnames", "start", "end", "GREAT_annotation")
+]
+  
+great <- group_by(regionsToGenes, seqnames, start, end) %>%
+  summarise_each(funs(paste(., collapse = "; ")))
+  
+great_df <- as.data.frame(great)
+colnames(great_df)[1] <- "chr"
+
+region_all_annot <- merge(great_df, region_all_annot)
+
+region_all_annot <- region_all_annot %>%
+  select(GREAT_annotation, cpg, `-log10pVal.final`, pVal.final)
+```
+
+### Merge datasets
+
+```{R}
+all_genes <- rbind(cpg_all, region_all_annot) %>%
+  tidyr::separate_rows(GREAT_annotation, sep = "; ") %>%
+  tidyr::separate(GREAT_annotation, into = "Gene", sep = "\\(", remove = TRUE) %>%
+  filter(!is.na(Gene)) %>%
+  group_by(Gene) %>%
+  mutate(`-log10pVal.final` = max(`-log10pVal.final`)) %>%
+  mutate(pVal.final = min(pVal.final)) %>%
+  select(-cpg) %>%
+  unique %>%
+  as.data.frame()
+
+all_genes_nProbes <- rbind(cpg_all, region_all_annot) %>%
+  tidyr::separate_rows(GREAT_annotation, sep = "; ") %>%
+  tidyr::separate(GREAT_annotation, into = "Gene", sep = "\\(", remove = TRUE) %>%
+  filter(!is.na(Gene)) %>%
+  select(Gene, cpg) %>%
+  unique() %>%
+  group_by(Gene) %>%
+  summarise(num.probes = n()) %>%
+  as.data.frame()
+
+all_genes_final <- merge(all_genes, all_genes_nProbes)
+colnames(all_genes_final)[2] <- "neglog10pVal.final"
+```
+
+### Calculate residuals
+
+```{R}
+cor.test(
+  all_genes_final$pVal.final,
+  all_genes_final$num.probes,
+  method = "spearman"
+)
+
+all_genes_final$resid_neglog10pval <- resid(
+  gam(
+    neglog10pVal.final  ~ s(num.probes),
+    family = Gamma(link=identity),
+    data = all_genes_final
+  )
+)
+
+hist(all_genes_final$resid_neglog10pval)
+
+cor.test(
+  all_genes_final$resid_neglog10pval,
+  all_genes_final$num.probes,
+  method = "spearman"
+)
+
+write.csv(
+  all_genes_final %>% select(Gene, resid_neglog10pval),
+  "females_neglog10Pvals.csv",
+  row.names = FALSE
+)
+```
+
+## For male
+
+### Prepare dataset for single cpg analysis
+
+```{R}
+cpg_all <- readr::read_csv(
+  file.path(
+    dir.result.cpg, 
+    "single_cpg_male_meta_bacon_annot_great_state_df.csv"
+  ),
+  col_types = readr::cols()
+) %>%
+  filter(!is.na(pVal.final)) %>%
+  dplyr::mutate(`-log10pVal.final` = -log10(pVal.final)) %>% 
+  select(cpg, GREAT_annotation, `-log10pVal.final`, pVal.final)
+```
+
+### Prepare dataset for region based analysis
+
+```{R}
+region_all <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_male_meta_bacon_annot_df.csv"
+  )
+) %>%
+  filter(!is.na(pVal.final)) %>%
+  dplyr::mutate(`-log10pVal.final` = -log10(pVal.final)) %>% 
+  select(inputRegion, `-log10pVal.final`, pVal.final)
+```
+
+#### Extract cpgs from each inputRegion
+
+```{R}
+probes.cluster.gene <- readRDS(
+  "../cpgList_3_200_withChrX/Gene_3_200_withChrX.RDS"
+)
+probes.cluster.intergene <- readRDS(
+  "../cpgList_3_200_withChrX/InterGene_3_200_withChrX.RDS"
+)
+probes.cluster.all <- c(
+  probes.cluster.gene, probes.cluster.intergene
+)
+
+idx <- names(probes.cluster.all) %in% region_all$inputRegion
+
+region_all$cpg <- plyr::laply(probes.cluster.all[idx], function(term){
+  paste(term, collapse = ";")
+})
+
+region_all <- region_all %>%
+  select(cpg, pVal.final, `-log10pVal.final`) %>%
+  tidyr::separate_rows(cpg, sep = ";")
+```
+
+#### Annotate cpgs
+
+```{R, message = FALSE, warning = FALSE, results = 'hide'}
+library(sesame)
+library(rGREAT)
+library(dplyr)
+```
+
+```{R}
+probes.info <- sesameDataGet("HM450.hg19.manifest") %>% as.data.frame()
+
+probes.info <- probes.info[, c("seqnames", "start", "end")]
+colnames(probes.info)[1] <- "chr"
+probes.info$chr <- as.character(probes.info$chr)
+
+### add chrom and position
+region_all_annot <- merge(
+  probes.info, region_all, by.x = "row.names", by.y = "cpg", sort = FALSE
+)
+colnames(region_all_annot)[1] <- "cpg"
+region_all_annot$cpg <- as.character(region_all_annot$cpg)
+```
+
+```{R}
+job_regions <- submitGreatJob(
+  gr = region_all_annot[, c("chr", "start", "end")],
+  species = "hg19" # or "hg38".
+)
+  
+regionsToGenes <- data.frame(plotRegionGeneAssociationGraphs(job_regions))
+regionsToGenes$GREAT_annotation <- ifelse(
+  regionsToGenes$distTSS > 0,
+  paste0(regionsToGenes$gene, "(+", regionsToGenes$distTSS, ")"),
+  paste0(regionsToGenes$gene, "(", regionsToGenes$distTSS, ")")
+)
+  
+regionsToGenes <- regionsToGenes[
+  ,c("seqnames", "start", "end", "GREAT_annotation")
+]
+  
+great <- group_by(regionsToGenes, seqnames, start, end) %>%
+  summarise_each(funs(paste(., collapse = "; ")))
+  
+great_df <- as.data.frame(great)
+colnames(great_df)[1] <- "chr"
+
+region_all_annot <- merge(great_df, region_all_annot)
+
+region_all_annot <- region_all_annot %>%
+  select(GREAT_annotation, cpg, `-log10pVal.final`, pVal.final)
+```
+
+### Merge datasets
+
+```{R}
+all_genes <- rbind(cpg_all, region_all_annot) %>%
+  tidyr::separate_rows(GREAT_annotation, sep = "; ") %>%
+  tidyr::separate(GREAT_annotation, into = "Gene", sep = "\\(", remove = TRUE) %>%
+  filter(!is.na(Gene)) %>%
+  group_by(Gene) %>%
+  mutate(`-log10pVal.final` = max(`-log10pVal.final`)) %>%
+  mutate(pVal.final = min(pVal.final)) %>%
+  select(-cpg) %>%
+  unique %>%
+  as.data.frame()
+
+all_genes_nProbes <- rbind(cpg_all, region_all_annot) %>%
+  tidyr::separate_rows(GREAT_annotation, sep = "; ") %>%
+  tidyr::separate(GREAT_annotation, into = "Gene", sep = "\\(", remove = TRUE) %>%
+  filter(!is.na(Gene)) %>%
+  select(Gene, cpg) %>%
+  unique() %>%
+  group_by(Gene) %>%
+  summarise(num.probes = n()) %>%
+  as.data.frame()
+
+all_genes_final <- merge(all_genes, all_genes_nProbes)
+colnames(all_genes_final)[2] <- "neglog10pVal.final"
+```
+
+### Calculate residuals
+
+```{R}
+cor.test(
+  all_genes_final$pVal.final,
+  all_genes_final$num.probes,
+  method = "spearman"
+)
+
+all_genes_final$resid_neglog10pval <- resid(
+  gam(
+    neglog10pVal.final  ~ s(num.probes),
+    family = Gamma(link=identity),
+    data = all_genes_final
+  )
+)
+
+hist(all_genes_final$resid_neglog10pval)
+
+cor.test(
+  all_genes_final$resid_neglog10pval,
+  all_genes_final$num.probes,
+  method = "spearman"
+)
+
+write.csv(
+  all_genes_final %>% select(Gene, resid_neglog10pval),
+  "males_neglog10Pvals.csv",
+  row.names = FALSE
+)
+```
+
+# LOLA: Locus overlap analysis for enrichment of genomic ranges
+
+```{R, message = FALSE, results = 'hide'}
+library(sesame)
+library(GenomicRanges)
+library(LOLA)
+```
+
+## For female
+
+### Make GRanges with DMRs
+
+```{R}
+meta_sig <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_female_meta_bacon_annot_sig_df.csv"
+  )
+) 
+meta_sig_gr <- meta_sig %>% makeGRangesFromDataFrame()
+
+meta_sig_pos_gr <- meta_sig %>% 
+  filter(estimate > 0) %>% makeGRangesFromDataFrame()
+
+meta_sig_neg_gr <- meta_sig %>% 
+  filter(estimate < 0) %>% makeGRangesFromDataFrame()
+
+meta_all_gr <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_female_meta_bacon_annot_df.csv"
+  )
+) %>% makeGRangesFromDataFrame()
+```
+
+### Make GRanges with CpGs
+
+```{R}
+single.cpg.sig.results <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_female_meta_bacon_annot_sig_df.csv"),
+  col_types = readr::cols()
+)
+single.cpg.sig.results.gr <- single.cpg.sig.results %>% makeGRangesFromDataFrame()
+
+single.cpg.sig.results.pos.gr <- single.cpg.sig.results %>%
+  filter(estimate > 0) %>% makeGRangesFromDataFrame()
+
+single.cpg.sig.results.neg.gr <- single.cpg.sig.results %>%
+  filter(estimate < 0) %>% makeGRangesFromDataFrame()
+
+single.cpg.results.gr <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_female_meta_bacon_annot_df.csv"),
+  col_types = readr::cols()
+) %>% makeGRangesFromDataFrame()
+```
+
+### Combine GRanges
+
+```{R}
+foreground_gr <- c(meta_sig_gr, single.cpg.sig.results.gr)
+foreground_pos_gr <- c(meta_sig_pos_gr, single.cpg.sig.results.pos.gr)
+foreground_neg_gr <- c(meta_sig_pos_gr, single.cpg.sig.results.neg.gr)
+background_gr <- c(meta_all_gr, single.cpg.results.gr)
+```
+
+### Run LOLA
+
+```{R}
+regionDB_hg19 <- loadRegionDB("../LOLACore/hg19")
+
+### All sig. cpgs
+locResults <- runLOLA(
+  userSets = foreground_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_female_all.csv"),
+  row.names = FALSE
+)
+```
+
+```{R}
+### All hyper cpgs
+locResults <- runLOLA(
+  userSets = foreground_pos_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_female_hyper.csv"),
+  row.names = FALSE
+)
+```
+
+```{R}
+### All hypo cpgs
+locResults <- runLOLA(
+  userSets = foreground_neg_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_female_hypo.csv"),
+  row.names = FALSE
+)
+```
+
+## For male
+
+### Make GRanges with DMRs
+
+```{R}
+meta_sig <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_male_meta_bacon_annot_sig_df.csv"
+  )
+) 
+meta_sig_gr <- meta_sig %>% makeGRangesFromDataFrame()
+
+meta_sig_pos_gr <- meta_sig %>% 
+  filter(estimate > 0) %>% makeGRangesFromDataFrame()
+
+meta_sig_neg_gr <- meta_sig %>% 
+  filter(estimate < 0) %>% makeGRangesFromDataFrame()
+
+meta_all_gr <- read.csv(
+  file.path(
+    dir.result.region,
+    "region_based_male_meta_bacon_annot_df.csv"
+  )
+) %>% makeGRangesFromDataFrame()
+```
+
+### Make GRanges with CpGs
+
+```{R}
+single.cpg.sig.results <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_male_meta_bacon_annot_sig_df.csv"),
+  col_types = readr::cols()
+)
+single.cpg.sig.results.gr <- single.cpg.sig.results %>% makeGRangesFromDataFrame()
+
+single.cpg.sig.results.pos.gr <- single.cpg.sig.results %>%
+  filter(estimate > 0) %>% makeGRangesFromDataFrame()
+
+single.cpg.sig.results.neg.gr <- single.cpg.sig.results %>%
+  filter(estimate < 0) %>% makeGRangesFromDataFrame()
+
+single.cpg.results.gr <- readr::read_csv(
+  file.path(dir.result.cpg, "single_cpg_male_meta_bacon_annot_df.csv"),
+  col_types = readr::cols()
+) %>% makeGRangesFromDataFrame()
+```
+
+### Combine GRanges
+
+```{R}
+foreground_gr <- c(meta_sig_gr, single.cpg.sig.results.gr)
+foreground_pos_gr <- c(meta_sig_pos_gr, single.cpg.sig.results.pos.gr)
+foreground_neg_gr <- c(meta_sig_pos_gr, single.cpg.sig.results.neg.gr)
+background_gr <- c(meta_all_gr, single.cpg.results.gr)
+```
+
+### Run LOLA
+
+```{R}
+### All sig. cpgs
+locResults <- runLOLA(
+  userSets = foreground_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_male_all.csv"),
+  row.names = FALSE
+)
+```
+
+```{R}
+### All hyper cpgs
+locResults <- runLOLA(
+  userSets = foreground_pos_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_male_hyper.csv"),
+  row.names = FALSE
+)
+```
+
+```{R}
+### All hypo cpgs
+locResults <- runLOLA(
+  userSets = foreground_neg_gr,
+  userUniverse = background_gr,
+  regionDB = regionDB_hg19,
+  cores = 1
+)
+
+locResults$pValue <- 10^(-locResults$pValueLog)
+locResults$fdr <- p.adjust(locResults$pValue, method = "fdr")
+locResults_ordered <- locResults[,c(1:4, 23:24, 5:22)]
+```
+
+```{R}
+write.csv(
+  locResults_ordered,
+  file.path(dir.result, "LOLA_results_male_hypo.csv"),
+  row.names = FALSE
+)
+```
+
+# Session information
+
+```{R}
+devtools::session_info()
+```
+
+
