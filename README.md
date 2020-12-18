@@ -38,7 +38,7 @@ We studied DNA methylation changes across different AD Braak stages in over 1000
 | eqtm_analysis_single_cpg.R | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/eqtm_analysis_single_cpg.R) |
 | eqtm_analysis_region_based.R | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/eqtm_analysis_region_based.R) |
 
-### Correlation of significant DNA methylation chagnes with genetic variants
+### Correlation of significant DNA methylation changes with genetic variants
 
 | File                 | Link |
 |----------------------|-------------|
