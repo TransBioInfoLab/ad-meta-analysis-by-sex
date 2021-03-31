@@ -25,6 +25,16 @@ We studied DNA methylation changes across different AD Braak stages in over 1000
 | meta_analysis_region_based.Rmd | [Link to the script](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/meta_analysis_region_based.rmd) |
 
 
+### Meta-analysis results
+
+| File                 | Link |
+|----------------------|-------------|
+| single_cpg_female_meta_df.csv         | [Link to the result](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/single_cpg_female_meta_df.csv) |
+| single_cpg_male_meta_df.csv           | [Link to the result](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/single_cpg_male_meta_df.csv) |
+| region_based_female_meta_df.csv       | [Link to the result](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/region_based_female_meta_df.csv) |
+| region_based_male_meta_df.csv         | [Link to the result](https://github.com/TransBioInfoLab/ADMetaBySex/blob/master/region_based_male_meta_df.csv) |
+
+
 ### Enrichment analysis of significant DNA methylation changes 
 
 | File                 | Link |
